@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Exec=xset s off -dpms s noblank
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Name=Disable DPMS
+Comment=Prevent screen blanking and DPMS shutdown

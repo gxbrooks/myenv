@@ -1,0 +1,11 @@
+# Disable screen blanking and DPMS
+xset s off -dpms s noblank
+
+# Optional: force display refresh
+/usr/local/bin/refresh_display.sh &
+
+# Optional: simulate input to wake devices
+xdotool mousemove 100 100
+xdotool key Shift
+
+
