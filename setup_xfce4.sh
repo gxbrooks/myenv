@@ -29,7 +29,7 @@ packages=("xfce4" "lightdm" "xdotool")
 packages_to_install=()
 
 for package in "${packages[@]}"; do
-    if dpkg -l | grep -q "^ii  $package "; then
+    if dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q "install ok installed"; then
         echo "✓ $package is already installed"
     else
         echo "→ $package needs to be installed"
@@ -126,5 +126,6 @@ echo "Next steps:"
 echo "  • Log out and log back in to activate XFCE4 desktop"
 echo "  • Run wake_on_kvm.sh if using KVM switches"
 echo "  • Restart or run 'source ~/.bashrc' to activate new bash configuration"
+
 
 
