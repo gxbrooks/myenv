@@ -1,0 +1,6 @@
+timeout:    0:15:00
+lock:       0:25:00
+
+mode: one
+selected: glmatrix
+

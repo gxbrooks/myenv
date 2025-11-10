@@ -1,2 +1,7 @@
+
 *.log
 *.swp
+
+# Primarily for AI agents to use as a scratch space
+tmp/
+
