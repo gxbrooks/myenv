@@ -1,8 +1,12 @@
 # myenv - KVM-Friendly Ubuntu Desktop Environment
 
+**Latest Version:** V1.1 - Fully Automated Setup with Interactive Prompts
+
 ## Overview
 
-This project configures an Ubuntu mini-PC to work reliably with KVM (Keyboard-Video-Mouse) switches by preventing common issues like screen blanking, display disconnection, and USB device sleep.
+This project provides a **fully automated** configuration for Ubuntu mini-PCs to work reliably with KVM (Keyboard-Video-Mouse) switches. It automatically switches to XFCE4 desktop with LightDM, configures display persistence, USB wake support, and prevents common issues like screen blanking, display disconnection, and system sleep.
+
+**New in V1.1:** Complete automation - no manual display manager selection, no manual session selection, interactive restart prompts with user choice.
 
 ## Problem Statement
 
@@ -16,52 +20,59 @@ When using KVM switches with Ubuntu systems, several issues commonly occur:
 
 This project provides a complete XFCE4 desktop environment configuration with KVM switch workarounds:
 
-### Environment Modifications
+### What Gets Configured
 
-1. **XFCE4 Desktop**: Installs a lightweight, stable desktop environment
-2. **Display Persistence**: 
+1. **XFCE4 Desktop**: Lightweight, stable desktop environment
+2. **LightDM Display Manager**: Automatically configured as default (V1.1+)
+3. **XFCE4 Default Session**: Automatically selected at login (V1.1+)
+4. **Display Persistence**: 
    - Disables DPMS video shutdown
    - Prevents screen blanking
    - Forces HDMI output to stay active
    - Auto-refreshes display on login (for KVM switches)
-3. **USB Wake Support**:
+5. **USB Wake Support**:
    - Enables wakeup for all USB devices
    - Creates persistent udev rules
-4. **Sleep Prevention**:
+6. **Sleep Prevention**:
    - Blocks automatic system sleep
    - Masks systemd sleep targets
    - Allows manual suspend when needed
-5. **Screensaver**: Configures xscreensaver with `glmatrix` theme
+7. **Screensaver**: Configures xscreensaver with `glmatrix` theme
 
 ### Repository Structure
 
 ```
 myenv/
-├── README.md                    # This file
-├── setup_xfce4.sh              # Main setup script
-├── wake_on_kvm.sh              # KVM switch workarounds
-├── .xprofile                   # X session startup (xset commands)
-├── .xscreensaver               # Screensaver config (glmatrix)
-├── .bashrc                     # DEPRECATED (see warning in file)
-└── autostart/
-    ├── xscreensaver.desktop           # Auto-start screensaver
-    ├── refresh-display.desktop        # Refresh display on login
-    └── disable-dpms.desktop.disabled  # Reference (not used)
+├── README.md                          # This file
+├── setup_xfce4.sh                     # Main setup script (8 sections, 341 lines)
+├── wake_on_kvm.sh                     # KVM switch workarounds
+├── .xprofile                          # X session startup (xset commands)
+├── .xscreensaver                      # Screensaver config (glmatrix)
+├── .bashrc                            # DEPRECATED (see warning in file)
+├── autostart/
+│   ├── xscreensaver.desktop           # Auto-start screensaver
+│   ├── refresh-display.desktop        # Refresh display on login
+│   └── disable-dpms.desktop.disabled  # Reference (not used)
+└── tmp/
+    ├── V1.0_COMMIT_SUMMARY.md         # V1.0 release notes
+    ├── V1.1_COMMIT_SUMMARY.md         # V1.1 release notes
+    ├── DISPLAY_MANAGER_AUTOMATION.md  # Technical details
+    └── DISPLAY_MANAGER_RESTART.md     # Reboot vs restart guide
 ```
 
 ## Installation
 
 ### Prerequisites
 
-- Ubuntu system (tested on Ubuntu mini-PC)
+- Ubuntu system (tested on Ubuntu 22.04 LTS / 24.04 LTS)
 - Sudo privileges
-- Git (to clone this repository)
+- Internet connection for package installation
 
 ### Setup Instructions
 
 1. **Clone or place this repository** in your home directory:
    ```bash
-   git clone <repo-url> ~/myenv
+   git clone https://github.com/gxbrooks/myenv.git ~/myenv
    cd ~/myenv
    ```
 
@@ -70,13 +81,23 @@ myenv/
    bash setup_xfce4.sh
    ```
    
-   This script will:
+   The script will automatically:
    - Install XFCE4, LightDM, xdotool, and xscreensaver packages
+   - **Switch to LightDM display manager** (no manual prompt!)
+   - **Set XFCE4 as default session** (no manual selection needed!)
    - Create symbolic links from your home directory to repository config files
    - Run `wake_on_kvm.sh` to configure KVM switch workarounds
    - Set up autostart entries for display refresh and screensaver
+   - **Prompt you to restart** with interactive choice
 
-3. **Log out and log back in** to activate the XFCE4 desktop environment
+3. **Choose how to restart** (if display manager changed):
+   - **Option A:** Reboot (recommended - graceful shutdown)
+   - **Option B:** Restart display manager (faster but instant blackout)
+   - **Option S:** Skip (do it manually later)
+   
+   The script waits for your choice, giving you time to save work!
+
+4. **After restart**, you'll automatically be in XFCE4 - no manual session selection needed!
 
 ### What Gets Linked
 
@@ -94,6 +115,27 @@ The setup script creates symbolic links in your home directory pointing to this 
 - Can sync across multiple systems
 
 ## How It Works
+
+### setup_xfce4.sh (8 Sections)
+
+The main setup script performs all configuration automatically:
+
+1. **Install Packages**: XFCE4, LightDM, xdotool, xscreensaver
+2. **Set LightDM as Default Display Manager** (V1.1+)
+   - Detects current display manager
+   - Switches to LightDM non-interactively
+   - Fallback method if dpkg-reconfigure fails
+3. **Set XFCE4 as Default Session** (V1.1+)
+   - System-wide: `/etc/lightdm/lightdm.conf.d/50-myenv-default-session.conf`
+   - User-specific: `~/.dmrc`
+4. **Link ~/.xprofile**: X session startup commands
+5. **Link ~/.config/autostart**: Autostart directory
+6. **Link ~/.xscreensaver**: Screensaver configuration
+7. **Run wake_on_kvm.sh**: KVM switch workarounds (see below)
+8. **Interactive Restart Prompt** (V1.1+)
+   - Option A: Reboot (graceful)
+   - Option B: Restart display manager (fast)
+   - Option S: Skip (manual later)
 
 ### wake_on_kvm.sh
 
@@ -183,6 +225,24 @@ To remove these configurations:
    sudo systemctl unmask sleep.target suspend.target hibernate.target hybrid-sleep.target
    ```
 
+## Version History
+
+### V1.1 (Current)
+- ✨ **Automated display manager switching** - No manual `dpkg-reconfigure` prompt
+- ✨ **Automated session selection** - No manual gear icon clicking at login
+- ✨ **Interactive restart prompt** - Choose reboot, DM restart, or skip
+- 📝 Enhanced documentation with technical guides
+- 🔧 Graceful vs instant blackout warnings
+- ✅ Complete automation from fresh Ubuntu to XFCE4
+
+### V1.0
+- ✅ Initial stable release
+- ✅ XFCE4 + LightDM installation
+- ✅ KVM switch workarounds (display, USB, sleep)
+- ✅ Symlink-based configuration management
+- ✅ Idempotent scripts
+- 📝 Comprehensive README
+
 ## License
 
 [Specify your license here]
@@ -194,4 +254,10 @@ To remove these configurations:
 ## Author
 
 Gary Brooks
+
+## Repository
+
+- **GitHub**: https://github.com/gxbrooks/myenv
+- **Latest Release**: V1.1
+- **Issues**: https://github.com/gxbrooks/myenv/issues
 
