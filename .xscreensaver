@@ -1,6 +1,23 @@
-timeout:    0:15:00
-lock:       0:25:00
+# XScreenSaver configuration file
+# Generated for myenv project
 
-mode: one
-selected: glmatrix
+mode:		one
+selected:	141
+timeout:	0:15:00
+cycle:		0:15:00
+lock:		True
+lockTimeout:	0:25:00
+passwdTimeout:	0:00:30
+visualID:	default
+dpmsEnabled:	False
+dpmsStandby:	2:00:00
+dpmsSuspend:	2:00:00
+dpmsOff:	4:00:00
+grabDesktopImages:  False
+grabVideoFrames:    False
+chooseRandomImages: False
+
+# Screen saver programs
+programs:								      \
+				glmatrix -root				    \n
 
