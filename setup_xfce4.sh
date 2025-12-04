@@ -18,8 +18,22 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$SCRIPT_DIR"
 
+# Check if running interactively (has TTY)
+# Allow override via NONINTERACTIVE=1 environment variable
+if [ -t 0 ] && [ "${NONINTERACTIVE:-}" != "1" ]; then
+    INTERACTIVE=true
+else
+    INTERACTIVE=false
+fi
+
+# Initialize variables
+NEEDS_REBOOT=false
+
 echo "========== $(date): Running setup_xfce4.sh =========="
 echo "Project directory: $PROJECT_DIR"
+if [ "$INTERACTIVE" = "false" ]; then
+    echo "Running in non-interactive mode (SSH detected)"
+fi
 
 #############################################
 # 1. Install packages if not already installed
@@ -190,7 +204,38 @@ else
 fi
 
 #############################################
-# 7. Run wake_on_kvm.sh for KVM switch support
+# 7. Install refresh_display_kvm.sh to /usr/local/bin
+#############################################
+echo "🔧 Installing refresh_display_kvm.sh to /usr/local/bin..."
+
+REFRESH_SCRIPT_SOURCE="$PROJECT_DIR/refresh_display_kvm.sh"
+REFRESH_SCRIPT_TARGET="/usr/local/bin/refresh_display_kvm.sh"
+
+if [ -f "$REFRESH_SCRIPT_SOURCE" ]; then
+    if [ -f "$REFRESH_SCRIPT_TARGET" ]; then
+        # Compare files to see if update is needed
+        if ! cmp -s "$REFRESH_SCRIPT_SOURCE" "$REFRESH_SCRIPT_TARGET"; then
+            echo "→ Updating $REFRESH_SCRIPT_TARGET"
+            sudo cp "$REFRESH_SCRIPT_SOURCE" "$REFRESH_SCRIPT_TARGET"
+            sudo chmod +x "$REFRESH_SCRIPT_TARGET"
+            echo "✓ refresh_display_kvm.sh updated in /usr/local/bin"
+        else
+            echo "✓ refresh_display_kvm.sh already installed and up-to-date"
+        fi
+    else
+        echo "→ Installing refresh_display_kvm.sh to /usr/local/bin"
+        sudo cp "$REFRESH_SCRIPT_SOURCE" "$REFRESH_SCRIPT_TARGET"
+        sudo chmod +x "$REFRESH_SCRIPT_TARGET"
+        echo "✓ refresh_display_kvm.sh installed to /usr/local/bin"
+    fi
+else
+    echo "⚠️  refresh_display_kvm.sh not found at $REFRESH_SCRIPT_SOURCE, skipping"
+fi
+
+echo ""
+
+#############################################
+# 8. Run wake_on_kvm.sh for KVM switch support
 #############################################
 echo "🔧 Setting up KVM switch persistence..."
 echo ""
@@ -230,7 +275,7 @@ fi
 echo ""
 
 #############################################
-# 8. Completion
+# 9. Completion
 #############################################
 echo ""
 echo "✅ setup_xfce4.sh complete!"
@@ -242,6 +287,7 @@ echo "  • XFCE4 set as default session (system-wide and user-specific)"
 echo "  • ~/.xprofile → $PROJECT_DIR/.xprofile"
 echo "  • ~/.config/autostart → $PROJECT_DIR/autostart"
 echo "  • ~/.xscreensaver → $PROJECT_DIR/.xscreensaver"
+echo "  • refresh_display_kvm.sh installed to /usr/local/bin"
 echo "  • KVM switch persistence configured (wake_on_kvm.sh)"
 echo ""
 echo "Next steps:"
@@ -283,53 +329,65 @@ if [[ "$NEEDS_REBOOT" == "true" ]]; then
     echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     
-    # Interactive prompt
-    while true; do
-        echo -n "  Please choose [A/B/S]: "
-        read -r choice
-        choice=$(echo "$choice" | tr '[:lower:]' '[:upper:]')
-        
-        case "$choice" in
-            A)
-                echo ""
-                echo "  ✓ Option A selected: Reboot"
-                echo ""
-                echo "  ⚠️  Last chance to save your work!"
-                echo -n "  Press Enter to reboot now, or Ctrl+C to cancel: "
-                read -r
-                echo ""
-                echo "  Rebooting system..."
-                sudo reboot
-                break
-                ;;
-            B)
-                echo ""
-                echo "  ✓ Option B selected: Restart Display Manager"
-                echo ""
-                echo "  ⚠️  Last chance to save your work!"
-                echo "  ⚠️  Screen will go BLACK immediately when you press Enter!"
-                echo -n "  Press Enter to restart display manager now, or Ctrl+C to cancel: "
-                read -r
-                echo ""
-                echo "  Restarting display manager..."
-                sudo systemctl restart lightdm
-                break
-                ;;
-            S)
-                echo ""
-                echo "  ✓ Skipping automatic restart"
-                echo ""
-                echo "  To switch to LightDM later, run ONE of these commands:"
-                echo "    sudo reboot"
-                echo "    sudo systemctl restart lightdm"
-                echo ""
-                break
-                ;;
-            *)
-                echo "  ✗ Invalid choice. Please enter A, B, or S."
-                ;;
-        esac
-    done
+    if [ "$INTERACTIVE" = "true" ]; then
+        # Interactive prompt (only when running with TTY)
+        while true; do
+            echo -n "  Please choose [A/B/S]: "
+            read -r choice
+            choice=$(echo "$choice" | tr '[:lower:]' '[:upper:]')
+            
+            case "$choice" in
+                A)
+                    echo ""
+                    echo "  ✓ Option A selected: Reboot"
+                    echo ""
+                    echo "  ⚠️  Last chance to save your work!"
+                    echo -n "  Press Enter to reboot now, or Ctrl+C to cancel: "
+                    read -r
+                    echo ""
+                    echo "  Rebooting system..."
+                    sudo reboot
+                    break
+                    ;;
+                B)
+                    echo ""
+                    echo "  ✓ Option B selected: Restart Display Manager"
+                    echo ""
+                    echo "  ⚠️  Last chance to save your work!"
+                    echo "  ⚠️  Screen will go BLACK immediately when you press Enter!"
+                    echo -n "  Press Enter to restart display manager now, or Ctrl+C to cancel: "
+                    read -r
+                    echo ""
+                    echo "  Restarting display manager..."
+                    sudo systemctl restart lightdm
+                    break
+                    ;;
+                S)
+                    echo ""
+                    echo "  ✓ Skipping automatic restart"
+                    echo ""
+                    echo "  To switch to LightDM later, run ONE of these commands:"
+                    echo "    sudo reboot"
+                    echo "    sudo systemctl restart lightdm"
+                    echo ""
+                    break
+                    ;;
+                *)
+                    echo "  ✗ Invalid choice. Please enter A, B, or S."
+                    ;;
+            esac
+        done
+    else
+        # Non-interactive mode (SSH): just print instructions
+        echo "  ⚠️  Running in non-interactive mode (SSH detected)"
+        echo "  ⚠️  Skipping automatic restart prompt"
+        echo ""
+        echo "  To complete the setup, run ONE of these commands:"
+        echo "    sudo reboot"
+        echo "    sudo systemctl restart lightdm"
+        echo ""
+        echo "  Or run this script again locally (with a display) to get interactive prompts."
+    fi
 else
     echo "  • Log out and log back in to activate XFCE4 desktop"
     echo "  • Your display will stay active even when KVM switches away"
