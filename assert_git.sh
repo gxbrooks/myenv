@@ -14,6 +14,7 @@ INPUT_PASSPHRASE=""
 USERNAME="$(whoami)"
 
 script_name="$(basename "${BASH_SOURCE[0]}")"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -232,6 +233,89 @@ if $CHECK; then
     echo "Result  : Check complete"
 else
     echo "Result  : Git and SSH identity asserted successfully"
-    echo "Next    : Add public key to GitHub: https://github.com/settings/keys"
-    echo "Next    : Public key path: $PUBLIC_KEY"
+fi
+
+# Validate SSH remote configuration for the myenv project.
+if git -C "$script_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    origin_url="$(git -C "$script_dir" remote get-url origin 2>/dev/null || true)"
+    github_owner=""
+    github_repo=""
+    github_ssh_ready=false
+    github_ssh_check_output=""
+    ssh_agent_state="unknown"
+
+    if [[ "$origin_url" =~ ^git@github\.com:([^/]+)/([^/]+)(\.git)?$ ]]; then
+        github_owner="${BASH_REMATCH[1]}"
+        github_repo="${BASH_REMATCH[2]}"
+    elif [[ "$origin_url" =~ ^https://github\.com/([^/]+)/([^/]+)(\.git)?$ ]]; then
+        github_owner="${BASH_REMATCH[1]}"
+        github_repo="${BASH_REMATCH[2]}"
+    fi
+
+    github_repo="${github_repo%.git}"
+    [[ -z "$github_owner" ]] && github_owner="$USER"
+    [[ -z "$github_repo" ]] && github_repo="$(basename "$script_dir")"
+
+    # Determine whether SSH auth to GitHub already works for this user.
+    if command -v ssh >/dev/null 2>&1; then
+        github_ssh_check_output="$(ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new -T git@github.com 2>&1 || true)"
+        if [[ "$github_ssh_check_output" == *"successfully authenticated"* ]]; then
+            github_ssh_ready=true
+        fi
+    fi
+    if command -v ssh-add >/dev/null 2>&1; then
+        ssh-add -l >/dev/null 2>&1
+        case $? in
+            0) ssh_agent_state="has_identities" ;;
+            1) ssh_agent_state="no_identities" ;;
+            2) ssh_agent_state="no_agent" ;;
+            *) ssh_agent_state="unknown" ;;
+        esac
+    fi
+
+    target_ssh_url="git@github.com:${github_owner}/${github_repo}.git"
+
+    if [[ "$origin_url" == git@github.com:* || "$origin_url" == ssh://git@github.com/* ]]; then
+        $DEBUG && echo "Debug   : myenv origin already uses SSH: $origin_url"
+        if $DEBUG && $github_ssh_ready; then
+            echo "Debug   : GitHub SSH authentication is already enabled."
+        fi
+    else
+        echo "Info    : Current origin URL: ${origin_url:-<unset>}"
+        if $CHECK; then
+            echo "Check   : Would set myenv origin to SSH URL: $target_ssh_url"
+        elif [[ -n "$origin_url" ]]; then
+            if git -C "$script_dir" remote set-url origin "$target_ssh_url"; then
+                echo "Result  : Updated myenv origin to SSH URL: $target_ssh_url"
+            else
+                echo "Warning : Failed to set myenv origin to SSH URL."
+                echo "Info    : Run manually:"
+                echo "Info    :   git -C \"$script_dir\" remote set-url origin \"$target_ssh_url\""
+            fi
+        else
+            echo "Warning : myenv origin remote is not set."
+            echo "Info    : Run manually:"
+            echo "Info    :   git -C \"$script_dir\" remote add origin \"$target_ssh_url\""
+        fi
+
+        if $github_ssh_ready; then
+            echo "Info    : GitHub SSH auth is already enabled; push with:"
+            echo "Info    :   git -C \"$script_dir\" push origin master"
+        else
+            echo "Info    : GitHub SSH auth is not confirmed yet."
+            if [[ "$ssh_agent_state" == "no_agent" || "$ssh_agent_state" == "no_identities" ]]; then
+                echo "Info    : Your SSH key may not be loaded in an ssh-agent."
+                echo "Info    : Try:"
+                echo "Info    :   eval \"\$(ssh-agent -s)\""
+                echo "Info    :   ssh-add \"$PRIVATE_KEY\""
+            fi
+            echo "Info    : If first-time setup, add key at https://github.com/settings/keys"
+            echo "Info    :   (public key: $PUBLIC_KEY)"
+            echo "Info    : Then test and push:"
+            echo "Info    :   ssh -T git@github.com"
+            echo "Info    :   git -C \"$script_dir\" push origin master"
+        fi
+    fi
+else
+    echo "Warning : Could not validate myenv git remote from $script_dir."
 fi

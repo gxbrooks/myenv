@@ -322,6 +322,7 @@ setup_external_repos
 INSTALLED_COUNT=0
 ALREADY_INSTALLED_COUNT=0
 FAILED_COUNT=0
+FAILED_STEPS=()
 
 for pkg in "${ALL_APT_PACKAGES[@]}"; do
     if is_package_installed "$pkg"; then
@@ -333,6 +334,8 @@ for pkg in "${ALL_APT_PACKAGES[@]}"; do
         else
             if ! $CHECK; then
                 FAILED_COUNT=$((FAILED_COUNT + 1))
+                FAILED_STEPS+=("apt:$pkg")
+                echo "Warning : Installation failed for package '$pkg'"
             fi
         fi
     fi
@@ -342,6 +345,8 @@ done
 if ! install_cursor; then
     if ! $CHECK; then
         FAILED_COUNT=$((FAILED_COUNT + 1))
+        FAILED_STEPS+=("tool:cursor")
+        echo "Warning : Cursor installation step failed"
     fi
 fi
 
@@ -358,12 +363,15 @@ if [[ -x "$git_assert_script" ]]; then
     if ! "$git_assert_script" "${git_assert_args[@]}"; then
         if ! $CHECK; then
             FAILED_COUNT=$((FAILED_COUNT + 1))
+            FAILED_STEPS+=("tool:assert_git")
+            echo "Warning : Git/SSH assertion step failed"
         fi
     fi
 else
     echo "Warning : Git assert script not found or not executable: $git_assert_script"
     if ! $CHECK; then
         FAILED_COUNT=$((FAILED_COUNT + 1))
+        FAILED_STEPS+=("tool:assert_git_missing")
     fi
 fi
 
@@ -381,7 +389,10 @@ else
             echo "Result  : All packages already installed"
         fi
     else
-        echo "Error   : Failed to install $FAILED_COUNT package(s)/tool(s)"
+        echo "Error   : Failed steps count: $FAILED_COUNT"
+        if [[ ${#FAILED_STEPS[@]} -gt 0 ]]; then
+            echo "Error   : Failed steps: ${FAILED_STEPS[*]}"
+        fi
         exit 1
     fi
 fi
