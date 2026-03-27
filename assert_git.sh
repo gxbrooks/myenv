@@ -63,25 +63,41 @@ fi
 current_name="$(git config --global --get user.name || true)"
 current_email="$(git config --global --get user.email || true)"
 
+if [[ -n "$INPUT_NAME" ]]; then
+    if $CHECK; then
+        echo "Check   : Would set git global user.name to '$INPUT_NAME'"
+    else
+        echo "Info    : Setting git global user.name to '$INPUT_NAME'"
+        git config --global user.name "$INPUT_NAME" || {
+            echo "Error   : Failed to set git global user.name"
+            exit 1
+        }
+        current_name="$INPUT_NAME"
+    fi
+fi
+
+if [[ -n "$INPUT_EMAIL" ]]; then
+    if $CHECK; then
+        echo "Check   : Would set git global user.email to '$INPUT_EMAIL'"
+    else
+        echo "Info    : Setting git global user.email to '$INPUT_EMAIL'"
+        git config --global user.email "$INPUT_EMAIL" || {
+            echo "Error   : Failed to set git global user.email"
+            exit 1
+        }
+        current_email="$INPUT_EMAIL"
+    fi
+fi
+
 if [[ -z "$current_name" ]]; then
-    if [[ -n "$INPUT_NAME" ]]; then
-        target_name="$INPUT_NAME"
-    elif $CHECK; then
-        target_name="<prompt>"
+    if $CHECK; then
+        echo "Check   : Would prompt for git global user.name"
     else
         read -r -p "Enter git global user.name: " target_name
-    fi
-
-    if [[ -z "$target_name" || "$target_name" == "<prompt>" ]]; then
-        if $CHECK; then
-            echo "Check   : Would prompt for git global user.name"
-        else
+        if [[ -z "$target_name" ]]; then
             echo "Error   : git global user.name is required"
             exit 1
         fi
-    elif $CHECK; then
-        echo "Check   : Would set git global user.name to '$target_name'"
-    else
         echo "Info    : Setting git global user.name to '$target_name'"
         git config --global user.name "$target_name" || {
             echo "Error   : Failed to set git global user.name"
@@ -89,28 +105,18 @@ if [[ -z "$current_name" ]]; then
         }
     fi
 else
-    $DEBUG && echo "Debug   : git global user.name is already set to '$current_name'"
+    $DEBUG && echo "Debug   : git global user.name is set to '$current_name'"
 fi
 
 if [[ -z "$current_email" ]]; then
-    if [[ -n "$INPUT_EMAIL" ]]; then
-        target_email="$INPUT_EMAIL"
-    elif $CHECK; then
-        target_email="<prompt>"
+    if $CHECK; then
+        echo "Check   : Would prompt for git global user.email"
     else
         read -r -p "Enter git global user.email: " target_email
-    fi
-
-    if [[ -z "$target_email" || "$target_email" == "<prompt>" ]]; then
-        if $CHECK; then
-            echo "Check   : Would prompt for git global user.email"
-        else
+        if [[ -z "$target_email" ]]; then
             echo "Error   : git global user.email is required"
             exit 1
         fi
-    elif $CHECK; then
-        echo "Check   : Would set git global user.email to '$target_email'"
-    else
         echo "Info    : Setting git global user.email to '$target_email'"
         git config --global user.email "$target_email" || {
             echo "Error   : Failed to set git global user.email"
@@ -118,23 +124,7 @@ if [[ -z "$current_email" ]]; then
         }
     fi
 else
-    $DEBUG && echo "Debug   : git global user.email is already set to '$current_email'"
-fi
-
-if [[ -n "$INPUT_NAME" && -n "$current_name" && "$current_name" != "$INPUT_NAME" ]]; then
-    if $CHECK; then
-        echo "Check   : git global user.name already set to '$current_name' (flag requested '$INPUT_NAME')"
-    else
-        $DEBUG && echo "Debug   : Not overriding existing git global user.name '$current_name'"
-    fi
-fi
-
-if [[ -n "$INPUT_EMAIL" && -n "$current_email" && "$current_email" != "$INPUT_EMAIL" ]]; then
-    if $CHECK; then
-        echo "Check   : git global user.email already set to '$current_email' (flag requested '$INPUT_EMAIL')"
-    else
-        $DEBUG && echo "Debug   : Not overriding existing git global user.email '$current_email'"
-    fi
+    $DEBUG && echo "Debug   : git global user.email is set to '$current_email'"
 fi
 
 if $CHECK; then

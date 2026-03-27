@@ -260,7 +260,7 @@ EXTERNAL_REPO_PACKAGES=(sublime-text google-chrome-stable)
 # Standard apt packages (available in Ubuntu's default repositories)
 # Include keyring components so Electron apps (Cursor, Chrome, etc.) can use
 # Secret Service instead of falling back to plaintext credential storage.
-STANDARD_PACKAGES=(terminator gnome-keyring libsecret-1-0 seahorse)
+STANDARD_PACKAGES=(terminator gnome-keyring libsecret-1-0 seahorse gh)
 
 # Network diagnostic tools
 NETWORK_PACKAGES=(nmap speedtest-cli)
