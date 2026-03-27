@@ -10,6 +10,10 @@
 # Parse arguments
 DEBUG=false
 CHECK=false
+GIT_NAME=""
+GIT_EMAIL=""
+GIT_PASSPHRASE=""
+GIT_USER=""
 
 script_path="${BASH_SOURCE[0]}"
 script_name="$(basename "$script_path")"
@@ -24,9 +28,41 @@ while [[ $# -gt 0 ]]; do
         --Check|-c)
             CHECK=true
             ;;
+        --name|-n)
+            shift
+            if [[ -z "${1:-}" ]]; then
+                echo "Error   : Missing value for --name|-n"
+                exit 1
+            fi
+            GIT_NAME="$1"
+            ;;
+        --email|-e)
+            shift
+            if [[ -z "${1:-}" ]]; then
+                echo "Error   : Missing value for --email|-e"
+                exit 1
+            fi
+            GIT_EMAIL="$1"
+            ;;
+        --Passphrase|-p|-N)
+            shift
+            if [[ -z "${1:-}" ]]; then
+                echo "Error   : Missing value for --Passphrase|-p|-N"
+                exit 1
+            fi
+            GIT_PASSPHRASE="$1"
+            ;;
+        --User|-u)
+            shift
+            if [[ -z "${1:-}" ]]; then
+                echo "Error   : Missing value for --User|-u"
+                exit 1
+            fi
+            GIT_USER="$1"
+            ;;
         *)
             echo "Error   : Unrecognized argument $1 in $script_name." 
-            echo "Usage   : $script_name [--Debug|-d] [--Check|-c]"
+            echo "Usage   : $script_name [--Debug|-d] [--Check|-c] [--name|-n <git_name>] [--email|-e <git_email>] [--Passphrase|-p|-N <passphrase>] [--User|-u <username>]"
             exit 1
             ;;
     esac
@@ -37,6 +73,10 @@ $DEBUG && echo "Debug   : Starting: $script_name"
 $DEBUG && echo "Debug   : script_dir = $script_dir"
 $DEBUG && echo "Debug   : CHECK = $CHECK"
 $DEBUG && echo "Debug   : DEBUG = $DEBUG"
+$DEBUG && echo "Debug   : GIT_NAME = ${GIT_NAME:-<unset>}"
+$DEBUG && echo "Debug   : GIT_EMAIL = ${GIT_EMAIL:-<unset>}"
+$DEBUG && echo "Debug   : GIT_PASSPHRASE = ${GIT_PASSPHRASE:+[REDACTED]}"
+$DEBUG && echo "Debug   : GIT_USER = ${GIT_USER:-<unset>}"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper: check if an apt package is installed
@@ -260,7 +300,7 @@ EXTERNAL_REPO_PACKAGES=(sublime-text google-chrome-stable)
 # Standard apt packages (available in Ubuntu's default repositories)
 # Include keyring components so Electron apps (Cursor, Chrome, etc.) can use
 # Secret Service instead of falling back to plaintext credential storage.
-STANDARD_PACKAGES=(terminator gnome-keyring libsecret-1-0 seahorse gh)
+STANDARD_PACKAGES=(terminator gnome-keyring libsecret-1-0 seahorse gh openssh-client)
 
 # Network diagnostic tools
 NETWORK_PACKAGES=(nmap speedtest-cli)
@@ -309,6 +349,10 @@ fi
 git_assert_args=()
 $DEBUG && git_assert_args+=("--Debug")
 $CHECK && git_assert_args+=("--Check")
+[[ -n "$GIT_NAME" ]] && git_assert_args+=("--name" "$GIT_NAME")
+[[ -n "$GIT_EMAIL" ]] && git_assert_args+=("--email" "$GIT_EMAIL")
+[[ -n "$GIT_PASSPHRASE" ]] && git_assert_args+=("--Passphrase" "$GIT_PASSPHRASE")
+[[ -n "$GIT_USER" ]] && git_assert_args+=("--User" "$GIT_USER")
 
 if [[ -x "$git_assert_script" ]]; then
     if ! "$git_assert_script" "${git_assert_args[@]}"; then
