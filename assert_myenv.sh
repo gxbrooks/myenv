@@ -2,12 +2,35 @@
 
 # Assert MyEnv Personal Environment
 #
-# Ensures all personal development tools and applications are installed.
-# This includes IDEs, browsers, terminal emulators, and diagnostic tools.
+# Orchestrates: assert_packages.sh, assert_git.sh, assert_bashrc.sh
+# Idempotent and safe to run multiple times.
 #
-# This script is idempotent and can be run multiple times safely.
+# Parameters (CLI flags and values consumed here):
+#
+#   --Debug | -d
+#       Verbose logging: print which repo paths and steps run; forwarded to every
+#       child script (assert_packages, assert_git, assert_bashrc).
+#
+#   --Check | -c
+#       Dry-run: report what would be installed or changed without modifying the
+#       system (no apt installs, no file edits, no git config writes where supported).
+#
+#   --name | -n <string>
+#       Git global user.name for commits (e.g. your real name). Passed through to
+#       assert_git.sh; if omitted, assert_git may prompt interactively when unset.
+#
+#   --email | -e <string>
+#       Git global user.email (must match your Git host account). Passed to
+#       assert_git.sh; if omitted, assert_git may prompt when unset.
+#
+#   --Passphrase | -p | -N <string>
+#       Passphrase for generating or using the Git SSH private key (~/.ssh/id_ed25519_github).
+#       Passed to assert_git.sh; avoids interactive passphrase prompts when set.
+#
+#   --User | -u <username>
+#       Unix account name whose home directory and ~/.ssh are configured (default: current user).
+#       Passed to assert_git.sh for SSH key paths and ownership.
 
-# Parse arguments
 DEBUG=false
 CHECK=false
 GIT_NAME=""
@@ -18,6 +41,8 @@ GIT_USER=""
 script_path="${BASH_SOURCE[0]}"
 script_name="$(basename "$script_path")"
 script_dir="$(cd "$(dirname "$script_path")" && pwd)"
+packages_script="$script_dir/assert_packages.sh"
+bashrc_script="$script_dir/assert_bashrc.sh"
 git_assert_script="$script_dir/assert_git.sh"
 
 while [[ $# -gt 0 ]]; do
@@ -61,7 +86,7 @@ while [[ $# -gt 0 ]]; do
             GIT_USER="$1"
             ;;
         *)
-            echo "Error   : Unrecognized argument $1 in $script_name." 
+            echo "Error   : Unrecognized argument $1 in $script_name."
             echo "Usage   : $script_name [--Debug|-d] [--Check|-c] [--name|-n <git_name>] [--email|-e <git_email>] [--Passphrase|-p|-N <passphrase>] [--User|-u <username>]"
             exit 1
             ;;
@@ -71,353 +96,76 @@ done
 
 $DEBUG && echo "Debug   : Starting: $script_name"
 $DEBUG && echo "Debug   : script_dir = $script_dir"
-$DEBUG && echo "Debug   : CHECK = $CHECK"
-$DEBUG && echo "Debug   : DEBUG = $DEBUG"
-$DEBUG && echo "Debug   : GIT_NAME = ${GIT_NAME:-<unset>}"
-$DEBUG && echo "Debug   : GIT_EMAIL = ${GIT_EMAIL:-<unset>}"
-$DEBUG && echo "Debug   : GIT_PASSPHRASE = ${GIT_PASSPHRASE:+[REDACTED]}"
-$DEBUG && echo "Debug   : GIT_USER = ${GIT_USER:-<unset>}"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Helper: check if an apt package is installed
-# ─────────────────────────────────────────────────────────────────────────────
-is_package_installed() {
-    local pkg=$1
-    dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed"
-}
+common_args=()
+$DEBUG && common_args+=(--Debug)
+$CHECK && common_args+=(--Check)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Helper: install a standard apt package
-# ─────────────────────────────────────────────────────────────────────────────
-install_package() {
-    local pkg=$1
-    if is_package_installed "$pkg"; then
-        $DEBUG && echo "Debug   : Package '$pkg' is already installed"
-        return 0
-    fi
-    
-    if $CHECK; then
-        echo "Check   : Would install package: $pkg"
-        return 1
-    else
-        echo "Info    : Installing package: $pkg"
-        sudo apt update -qq
-        sudo apt install -y "$pkg"
-        if [[ $? -eq 0 ]]; then
-            echo "Result  : Successfully installed $pkg"
-            return 0
-        else
-            echo "Error   : Failed to install $pkg"
-            return 1
-        fi
-    fi
-}
+# FAILED_COUNT — number of orchestrated steps that exited non-zero (missing script, chmod, or runtime failure).
+# FAILED_STEPS — short labels (e.g. assert_packages, assert_git) for the summary line on error.
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Setup: add external apt repositories that are not in Ubuntu's default repos
-# ─────────────────────────────────────────────────────────────────────────────
-setup_external_repos() {
-    # ── Sublime Text ──────────────────────────────────────────────────────────
-    if [[ ! -f /etc/apt/sources.list.d/sublime-text.list ]]; then
-        if $CHECK; then
-            echo "Check   : Would add Sublime Text apt repository"
-        else
-            echo "Info    : Adding Sublime Text apt repository"
-            wget -qO - https://download.sublimetext.com/sublimehq-pub.gpg \
-                | gpg --dearmor \
-                | sudo tee /etc/apt/trusted.gpg.d/sublimehq-archive.gpg > /dev/null
-            echo "deb https://download.sublimetext.com/ apt/stable/" \
-                | sudo tee /etc/apt/sources.list.d/sublime-text.list > /dev/null
-            echo "Result  : Sublime Text repository added"
-        fi
-    else
-        $DEBUG && echo "Debug   : Sublime Text repository already configured"
-    fi
-
-    # ── Google Chrome ─────────────────────────────────────────────────────────
-    if [[ ! -f /etc/apt/sources.list.d/google-chrome.list ]]; then
-        if $CHECK; then
-            echo "Check   : Would add Google Chrome apt repository"
-        else
-            echo "Info    : Adding Google Chrome apt repository"
-            wget -qO - https://dl.google.com/linux/linux_signing_key.pub \
-                | gpg --dearmor \
-                | sudo tee /etc/apt/trusted.gpg.d/google-chrome.gpg > /dev/null
-            echo "deb [arch=amd64] https://dl.google.com/linux/chrome/deb/ stable main" \
-                | sudo tee /etc/apt/sources.list.d/google-chrome.list > /dev/null
-            echo "Result  : Google Chrome repository added"
-        fi
-    else
-        $DEBUG && echo "Debug   : Google Chrome repository already configured"
-    fi
-
-    # Refresh apt after adding new repos (skip if check-only)
-    if ! $CHECK; then
-        $DEBUG && echo "Debug   : Running apt update after repo changes"
-        sudo apt update -qq
-    fi
-}
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Setup: install Cursor via AppImage (not available in any apt repository)
-# ─────────────────────────────────────────────────────────────────────────────
-install_cursor() {
-    local install_dir="/opt/cursor"
-    local binary_path="$install_dir/usr/share/cursor/cursor"
-    local sandbox_path="$install_dir/usr/share/cursor/chrome-sandbox"
-    local desktop_file="/usr/share/applications/cursor.desktop"
-    local wrapper="/usr/local/bin/cursor"
-    local icon_path="$install_dir/usr/share/cursor/resources/app/resources/linux/code.png"
-
-    # Consider Cursor installed if the extracted binary is already in place
-    if [[ -f "$binary_path" ]]; then
-        $DEBUG && echo "Debug   : Cursor already installed at $binary_path"
-        return 0
-    fi
-
-    if $CHECK; then
-        echo "Check   : Would install Cursor (extracted AppImage) to $install_dir"
-        return 1
-    fi
-
-    echo "Info    : Installing Cursor"
-
-    # Ensure curl is available
-    if ! command -v curl &>/dev/null; then
-        echo "Info    : Installing curl (required for Cursor download)"
-        sudo apt install -y curl
-        if [[ $? -ne 0 ]]; then
-            echo "Error   : Failed to install curl"
-            return 1
-        fi
-    fi
-
-    # Ensure jq is available for parsing the download API response
-    if ! command -v jq &>/dev/null; then
-        echo "Info    : Installing jq (required to parse Cursor download API)"
-        sudo apt install -y jq
-        if [[ $? -ne 0 ]]; then
-            echo "Error   : Failed to install jq"
-            return 1
-        fi
-    fi
-
-    # Resolve the AppImage URL from Cursor's download API
-    local api_url="https://www.cursor.com/api/download?platform=linux-x64&releaseTrack=stable"
-    $DEBUG && echo "Debug   : Fetching Cursor download URL from API"
-
-    local download_url
-    download_url=$(curl -fsSL "$api_url" | jq -r '.downloadUrl')
-
-    if [[ -z "$download_url" || "$download_url" == "null" ]]; then
-        echo "Error   : Failed to resolve Cursor AppImage download URL from API"
-        return 1
-    fi
-
-    $DEBUG && echo "Debug   : Cursor download URL: $download_url"
-
-    # Download the AppImage to a temp location
-    local tmp_appimage
-    tmp_appimage=$(mktemp /tmp/cursor_XXXXXX.AppImage)
-    curl -fsSL -L "$download_url" -o "$tmp_appimage"
-    if [[ $? -ne 0 ]]; then
-        echo "Error   : Failed to download Cursor AppImage"
-        rm -f "$tmp_appimage"
-        return 1
-    fi
-    chmod +x "$tmp_appimage"
-
-    # Extract the AppImage — this avoids all FUSE/libfuse2 dependency issues
-    # and gives us a proper directory we can fix chrome-sandbox permissions on
-    echo "Info    : Extracting Cursor AppImage"
-    local tmp_extract_dir
-    tmp_extract_dir=$(mktemp -d /tmp/cursor_extract_XXXXXX)
-    cd "$tmp_extract_dir"
-    "$tmp_appimage" --appimage-extract > /dev/null 2>&1
-    if [[ $? -ne 0 || ! -d "$tmp_extract_dir/squashfs-root" ]]; then
-        echo "Error   : Failed to extract Cursor AppImage"
-        rm -f "$tmp_appimage"
-        rm -rf "$tmp_extract_dir"
-        return 1
-    fi
-
-    # Move extracted files to the install directory
-    sudo mkdir -p "$install_dir"
-    sudo cp -r "$tmp_extract_dir/squashfs-root/." "$install_dir/"
-
-    # Fix chrome-sandbox permissions — this is the root cause of the sandbox
-    # errors on Ubuntu 24.04. The binary must be owned by root with SUID (4755)
-    # so that Electron can use it for process isolation.
-    if [[ -f "$sandbox_path" ]]; then
-        echo "Info    : Fixing chrome-sandbox permissions"
-        sudo chown root:root "$sandbox_path"
-        sudo chmod 4755 "$sandbox_path"
-    else
-        echo "Warning : chrome-sandbox not found at $sandbox_path — skipping"
-    fi
-
-    # Create a wrapper script on PATH that launches the extracted binary
-    if [[ ! -f "$wrapper" ]]; then
-        sudo tee "$wrapper" > /dev/null <<WRAPPER
-#!/bin/bash
-exec "$binary_path" "\$@"
-WRAPPER
-        sudo chmod +x "$wrapper"
-    fi
-
-    # Create a .desktop launcher for the application menu
-    if [[ ! -f "$desktop_file" ]]; then
-        local icon_arg="$icon_path"
-        [[ ! -f "$icon_path" ]] && icon_arg="utilities-terminal"
-        sudo tee "$desktop_file" > /dev/null <<DESKTOP
-[Desktop Entry]
-Name=Cursor
-Exec=$binary_path %U
-Terminal=false
-Type=Application
-Icon=$icon_arg
-StartupWMClass=Cursor
-Comment=Cursor AI Code Editor
-Categories=Development;IDE;
-DESKTOP
-        sudo update-desktop-database 2>/dev/null || true
-    fi
-
-    # Clean up temp files
-    rm -f "$tmp_appimage"
-    rm -rf "$tmp_extract_dir"
-
-    echo "Result  : Successfully installed Cursor"
-    return 0
-}
-# ─────────────────────────────────────────────────────────────────────────────
-# Package lists
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Packages that require external repos (added above in setup_external_repos)
-EXTERNAL_REPO_PACKAGES=(sublime-text google-chrome-stable)
-
-# Standard apt packages (available in Ubuntu's default repositories)
-# Include keyring components so Electron apps (Cursor, Chrome, etc.) can use
-# Secret Service instead of falling back to plaintext credential storage.
-STANDARD_PACKAGES=(terminator gnome-keyring libsecret-1-0 seahorse gh openssh-client)
-
-# Network diagnostic tools
-NETWORK_PACKAGES=(nmap speedtest-cli)
-
-# Combine all standard apt packages
-ALL_APT_PACKAGES=("${EXTERNAL_REPO_PACKAGES[@]}" "${STANDARD_PACKAGES[@]}" "${NETWORK_PACKAGES[@]}")
-
-$DEBUG && echo "Debug   : APT packages to check/install: ${ALL_APT_PACKAGES[*]}"
-$DEBUG && echo "Debug   : Custom installs: cursor (AppImage)"
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Main installation flow
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Step 1: Add external apt repositories before attempting to install from them
-setup_external_repos
-
-# Step 2: Install all apt packages
-INSTALLED_COUNT=0
-ALREADY_INSTALLED_COUNT=0
 FAILED_COUNT=0
 FAILED_STEPS=()
 
-for pkg in "${ALL_APT_PACKAGES[@]}"; do
-    if is_package_installed "$pkg"; then
-        ALREADY_INSTALLED_COUNT=$((ALREADY_INSTALLED_COUNT + 1))
-        $DEBUG && echo "Debug   : Package '$pkg' is already installed"
-    else
-        if install_package "$pkg"; then
-            INSTALLED_COUNT=$((INSTALLED_COUNT + 1))
-        else
-            if ! $CHECK; then
-                FAILED_COUNT=$((FAILED_COUNT + 1))
-                FAILED_STEPS+=("apt:$pkg")
-                echo "Warning : Installation failed for package '$pkg'"
-            fi
-        fi
-    fi
-done
+# run_step <step_label> <path_to_script> [args...]
+#   step_label — used only in FAILED_STEPS / diagnostics (not passed to the script).
+#   path_to_script — must exist and be executable.
+#   remaining args — forwarded verbatim to the child script (e.g. --Debug, --name …).
 
-# Step 3: Install Cursor via AppImage
-if ! install_cursor; then
-    if ! $CHECK; then
+run_step() {
+    local label=$1
+    local script_path=$2
+    shift 2
+    if [[ ! -f "$script_path" ]]; then
+        echo "Error   : Script not found: $script_path"
         FAILED_COUNT=$((FAILED_COUNT + 1))
-        FAILED_STEPS+=("tool:cursor")
-        echo "Warning : Cursor installation step failed"
+        FAILED_STEPS+=("$label:missing")
+        return 1
     fi
+    if [[ ! -x "$script_path" ]]; then
+        echo "Error   : Script not executable: $script_path"
+        FAILED_COUNT=$((FAILED_COUNT + 1))
+        FAILED_STEPS+=("$label:not_executable")
+        return 1
+    fi
+    if ! "$script_path" "$@"; then
+        FAILED_COUNT=$((FAILED_COUNT + 1))
+        FAILED_STEPS+=("$label")
+        return 1
+    fi
+    return 0
+}
+
+# --- Packages and Cursor (apt repos, AppImage) ---
+if ! run_step "assert_packages" "$packages_script" "${common_args[@]}"; then
+    echo "Warning : assert_packages step failed"
 fi
 
-# Step 4: Assert git global identity configuration
-git_assert_args=()
-$DEBUG && git_assert_args+=("--Debug")
-$CHECK && git_assert_args+=("--Check")
-[[ -n "$GIT_NAME" ]] && git_assert_args+=("--name" "$GIT_NAME")
-[[ -n "$GIT_EMAIL" ]] && git_assert_args+=("--email" "$GIT_EMAIL")
-[[ -n "$GIT_PASSPHRASE" ]] && git_assert_args+=("--Passphrase" "$GIT_PASSPHRASE")
-[[ -n "$GIT_USER" ]] && git_assert_args+=("--User" "$GIT_USER")
+# --- Git identity and SSH (all git/SSH logic lives in assert_git.sh) ---
+git_assert_args=("${common_args[@]}")
+[[ -n "$GIT_NAME" ]] && git_assert_args+=(--name "$GIT_NAME")
+[[ -n "$GIT_EMAIL" ]] && git_assert_args+=(--email "$GIT_EMAIL")
+[[ -n "$GIT_PASSPHRASE" ]] && git_assert_args+=(--Passphrase "$GIT_PASSPHRASE")
+[[ -n "$GIT_USER" ]] && git_assert_args+=(--User "$GIT_USER")
 
-if [[ -x "$git_assert_script" ]]; then
-    if ! "$git_assert_script" "${git_assert_args[@]}"; then
-        if ! $CHECK; then
-            FAILED_COUNT=$((FAILED_COUNT + 1))
-            FAILED_STEPS+=("tool:assert_git")
-            echo "Warning : Git/SSH assertion step failed"
-        fi
-    fi
-else
-    echo "Warning : Git assert script not found or not executable: $git_assert_script"
-    if ! $CHECK; then
-        FAILED_COUNT=$((FAILED_COUNT + 1))
-        FAILED_STEPS+=("tool:assert_git_missing")
-    fi
+if ! run_step "assert_git" "$git_assert_script" "${git_assert_args[@]}"; then
+    echo "Warning : assert_git step failed"
 fi
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Summary
-# ─────────────────────────────────────────────────────────────────────────────
+# --- ~/.bashrc hook for myenv/.bashrc ---
+if ! run_step "assert_bashrc" "$bashrc_script" "${common_args[@]}"; then
+    echo "Warning : assert_bashrc step failed"
+fi
+
+# --- Summary ---
 if $CHECK; then
-    echo "Check   : Would install packages/tools as needed"
-    echo "Result  : Check complete"
+    echo "Result  : MyEnv check complete (all steps dry-run where applicable)"
 else
-    if [[ $FAILED_COUNT -eq 0 ]]; then
-        if [[ $INSTALLED_COUNT -gt 0 ]]; then
-            echo "Result  : Successfully installed $INSTALLED_COUNT package(s), $ALREADY_INSTALLED_COUNT already installed"
-        else
-            echo "Result  : All packages already installed"
-        fi
-    else
-        echo "Error   : Failed steps count: $FAILED_COUNT"
-        if [[ ${#FAILED_STEPS[@]} -gt 0 ]]; then
-            echo "Error   : Failed steps: ${FAILED_STEPS[*]}"
-        fi
+    if [[ $FAILED_COUNT -gt 0 ]]; then
+        echo "Error   : MyEnv completed with $FAILED_COUNT failure(s): ${FAILED_STEPS[*]}"
         exit 1
     fi
+    echo "Result  : MyEnv personal environment configured successfully"
 fi
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Verify installations
-# ─────────────────────────────────────────────────────────────────────────────
-if ! $CHECK; then
-    echo ""
-    echo "Info    : Verifying installations..."
-
-    for pkg in "${ALL_APT_PACKAGES[@]}"; do
-        if is_package_installed "$pkg"; then
-            $DEBUG && echo "Debug   : ✓ $pkg is installed"
-        else
-            echo "Warning : $pkg installation verification failed"
-        fi
-    done
-
-    # Verify Cursor separately (extracted binary, not an apt package)
-    if [[ -f /opt/cursor/usr/share/cursor/cursor ]]; then
-        $DEBUG && echo "Debug   : ✓ cursor is installed"
-    else
-        echo "Warning : cursor installation verification failed"
-    fi
-fi
-
-echo "Result  : MyEnv personal environment configured successfully"
+exit 0

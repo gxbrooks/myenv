@@ -2,6 +2,9 @@
 
 # Assert Git and SSH Client Identity Configuration
 #
+# Canonical place for git global user.name / user.email and GitHub SSH key setup.
+# Invoked directly or by assert_myenv.sh (do not duplicate identity logic elsewhere).
+#
 # Ensures global git user.name/user.email are set and a user SSH key exists
 # for Git operations across projects.
 # This script is idempotent and can be run multiple times safely.
@@ -94,8 +97,8 @@ fi
 
 HOME_DIR="$(eval echo "~$USERNAME")"
 SSH_DIR="$HOME_DIR/.ssh"
-PRIVATE_KEY="$SSH_DIR/id_ed25519"
-PUBLIC_KEY="$SSH_DIR/id_ed25519.pub"
+PRIVATE_KEY="$SSH_DIR/id_ed25519_github"
+PUBLIC_KEY="$SSH_DIR/id_ed25519_github.pub"
 
 if [[ -d "$SSH_DIR" ]]; then
     $DEBUG && echo "Debug   : .ssh directory exists for user '$USERNAME'"
