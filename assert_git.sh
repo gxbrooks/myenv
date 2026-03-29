@@ -5,8 +5,9 @@
 # Canonical place for git global user.name / user.email and GitHub SSH key setup.
 # Invoked directly or by assert_myenv.sh (do not duplicate identity logic elsewhere).
 #
-# Ensures global git user.name/user.email are set and a user SSH key exists
-# for Git operations across projects.
+# Ensures global git user.name/user.email are set, a GitHub SSH key exists
+# (id_ed25519_github), and ~/.ssh/config lists that key for Host github.com
+# (non-default key names are not used by ssh unless IdentityFile is set).
 # This script is idempotent and can be run multiple times safely.
 
 DEBUG=false
@@ -99,6 +100,54 @@ HOME_DIR="$(eval echo "~$USERNAME")"
 SSH_DIR="$HOME_DIR/.ssh"
 PRIVATE_KEY="$SSH_DIR/id_ed25519_github"
 PUBLIC_KEY="$SSH_DIR/id_ed25519_github.pub"
+SSH_CONFIG="$SSH_DIR/config"
+GITHUB_CFG_BEGIN="# BEGIN myenv assert_git github.com"
+GITHUB_CFG_END="# END myenv assert_git github.com"
+
+_ssh_config_strip_marked_block() {
+    local file="$1" begin="$2" end="$3" out="$4"
+    : >"$out"
+    local skip=0
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$line" == "$begin" ]]; then skip=1; continue; fi
+        if [[ "$line" == "$end" ]]; then skip=0; continue; fi
+        [[ $skip -eq 0 ]] && printf '%s\n' "$line" >>"$out"
+    done <"$file"
+}
+
+ensure_ssh_config_github_host() {
+    if $CHECK; then
+        echo "Check   : Would ensure $SSH_CONFIG contains GitHub Host (IdentityFile + IdentitiesOnly)"
+        return 0
+    fi
+    mkdir -p "$SSH_DIR"
+    local rest
+    rest="$(mktemp)"
+    if [[ -f "$SSH_CONFIG" ]] && grep -qF "$GITHUB_CFG_BEGIN" "$SSH_CONFIG" 2>/dev/null; then
+        _ssh_config_strip_marked_block "$SSH_CONFIG" "$GITHUB_CFG_BEGIN" "$GITHUB_CFG_END" "$rest"
+    elif [[ -f "$SSH_CONFIG" ]]; then
+        cp "$SSH_CONFIG" "$rest"
+    else
+        : >"$rest"
+    fi
+    local tmp
+    tmp="$(mktemp)"
+    {
+        echo "$GITHUB_CFG_BEGIN"
+        echo "Host github.com"
+        echo "  HostName github.com"
+        echo "  User git"
+        echo "  IdentityFile ~/.ssh/id_ed25519_github"
+        echo "  IdentitiesOnly yes"
+        echo "$GITHUB_CFG_END"
+        [[ -s "$rest" ]] && { echo ""; cat "$rest"; }
+    } >"$tmp"
+    mv "$tmp" "$SSH_CONFIG"
+    rm -f "$rest"
+    chmod 600 "$SSH_CONFIG"
+    chown "$USERNAME:$USERNAME" "$SSH_CONFIG"
+    $DEBUG && echo "Debug   : Prepended GitHub Host block in $SSH_CONFIG"
+}
 
 if [[ -d "$SSH_DIR" ]]; then
     $DEBUG && echo "Debug   : .ssh directory exists for user '$USERNAME'"
@@ -121,7 +170,7 @@ else
     else
         ssh_passphrase="$INPUT_PASSPHRASE"
         if [[ -z "$ssh_passphrase" ]]; then
-            read -r -s -p "Enter passphrase for ~/.ssh/id_ed25519: " ssh_passphrase
+            read -r -s -p "Enter passphrase for ~/.ssh/id_ed25519_github: " ssh_passphrase
             echo ""
             read -r -s -p "Confirm passphrase: " ssh_passphrase_confirm
             echo ""
@@ -164,6 +213,8 @@ if [[ -f "$PUBLIC_KEY" && "$(stat -c "%a" "$PUBLIC_KEY")" -ne 644 ]]; then
         echo "Info    : Fixed public key permissions"
     fi
 fi
+
+ensure_ssh_config_github_host
 
 current_name="$(git config --global --get user.name || true)"
 current_email="$(git config --global --get user.email || true)"
@@ -307,10 +358,8 @@ if git -C "$script_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
         else
             echo "Info    : GitHub SSH auth is not confirmed yet."
             if [[ "$ssh_agent_state" == "no_agent" || "$ssh_agent_state" == "no_identities" ]]; then
-                echo "Info    : Your SSH key may not be loaded in an ssh-agent."
-                echo "Info    : Try:"
-                echo "Info    :   eval \"\$(ssh-agent -s)\""
-                echo "Info    :   ssh-add \"$PRIVATE_KEY\""
+                echo "Info    : Your SSH key may not be loaded. Ensure keychain runs from myenv (see assert_bashrc.sh / ~/.bashrc)."
+                echo "Info    : Or once per session: ssh-add \"$PRIVATE_KEY\""
             fi
             echo "Info    : If first-time setup, add key at https://github.com/settings/keys"
             echo "Info    :   (public key: $PUBLIC_KEY)"
