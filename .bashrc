@@ -12,3 +12,16 @@ if ((${#_keychain_keys[@]})); then
   command -v keychain >/dev/null 2>&1 && eval "$(keychain --quiet --eval "${_keychain_keys[@]}")"
 fi
 unset _k _keychain_keys
+
+# Spark observability client sanity assertions.
+# Run on new interactive shells to detect drift in cluster endpoints/mounts/env.
+if [[ $- == *i* ]]; then
+  _spark_obs_root="${HOME}/repos/spark-observability"
+  _spark_assert="${_spark_obs_root}/linux/assert_client_sanity.sh"
+  if [[ -x "${_spark_assert}" ]]; then
+    "${_spark_assert}" >/tmp/assert_client_sanity.log 2>&1 || {
+      echo "Warning: spark client sanity check reported issues. See /tmp/assert_client_sanity.log"
+    }
+  fi
+  unset _spark_obs_root _spark_assert
+fi
