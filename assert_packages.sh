@@ -208,7 +208,7 @@ DESKTOP
 }
 
 EXTERNAL_REPO_PACKAGES=(sublime-text google-chrome-stable)
-STANDARD_PACKAGES=(terminator gnome-keyring libsecret-1-0 seahorse gh openssh-client keychain)
+STANDARD_PACKAGES=(terminator gnome-keyring libsecret-1-0 seahorse gh openssh-client keychain okular xfce4-screenshooter)
 NETWORK_PACKAGES=(nmap speedtest-cli)
 ALL_APT_PACKAGES=("${EXTERNAL_REPO_PACKAGES[@]}" "${STANDARD_PACKAGES[@]}" "${NETWORK_PACKAGES[@]}")
 

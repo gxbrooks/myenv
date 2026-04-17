@@ -241,16 +241,15 @@ else
     timeout 3 xrandr --output "$OUTPUT" --auto 2>/dev/null || echo "⚠️  Failed to refresh $OUTPUT (may have timed out)"
 fi
 
-# Method 2: Disable DPMS and wake the display (with timeouts)
-echo "→ Disabling DPMS and screen blanking..."
-timeout 2 xset -dpms 2>/dev/null || true
+# Method 2: Wake the display, then restore normal DPMS policy (~/.xprofile)
+DPMS_OFF_SEC=$((60 * 60))
+echo "→ Waking display and restoring DPMS (off after ${DPMS_OFF_SEC}s idle)..."
 timeout 2 xset s off 2>/dev/null || true
-timeout 2 xset s noblank 2>/dev/null || true
-
-# Method 3: Send a wake signal (if supported)
 timeout 2 xset dpms force on 2>/dev/null || true
+timeout 2 xset +dpms 2>/dev/null || true
+timeout 2 xset dpms 0 0 "$DPMS_OFF_SEC" 2>/dev/null || true
 
-# Method 4: If requested, restart LightDM (most aggressive)
+# Method 3: If requested, restart LightDM (most aggressive)
 # This is especially important if the system booted headless
 if [ "$RESTART_LIGHTDM" = "true" ]; then
     echo ""

@@ -1,5 +1,10 @@
-# Disable screen blanking and DPMS
-xset s off -dpms s noblank
+# Idle display policy:
+#   Screen saver, lock timing, and DPMS monitor power-off are configured in ~/.xscreensaver
+#   (xscreensaver must own DPMS — if dpmsEnabled is false there, it disables server DPMS and
+#   the display stays on forever). KVM refresh script uses 3600s DPMS off to match dpmsOff.
+#
+# Turn off X server's built-in screen saver; xscreensaver draws the GL hacks.
+xset s off
 
 # Optional: force display refresh
 /usr/local/bin/refresh_display.sh &

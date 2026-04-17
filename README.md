@@ -44,7 +44,7 @@ This project provides a complete XFCE4 desktop environment configuration with KV
 ```
 myenv/
 ├── README.md                          # This file
-├── setup_xfce4.sh                     # Main setup script (8 sections, 341 lines)
+├── assert_xfce4.sh                    # XFCE4/LightDM/KVM desktop assert (run via assert_myenv.sh or standalone)
 ├── wake_on_kvm.sh                     # KVM switch workarounds
 ├── .xprofile                          # X session startup (xset commands)
 ├── .xscreensaver                      # Screensaver config (glmatrix)
@@ -76,9 +76,9 @@ myenv/
    cd ~/myenv
    ```
 
-2. **Run the setup script**:
+2. **Run the desktop assert** (or use `assert_myenv.sh`, which includes this step):
    ```bash
-   bash setup_xfce4.sh
+   bash assert_xfce4.sh
    ```
    
    The script will automatically:
@@ -116,9 +116,9 @@ The setup script creates symbolic links in your home directory pointing to this 
 
 ## How It Works
 
-### setup_xfce4.sh (8 Sections)
+### assert_xfce4.sh
 
-The main setup script performs all configuration automatically:
+The desktop assert script performs all configuration automatically (also accepts `--Check` for dry-run and `--Debug`):
 
 1. **Install Packages**: XFCE4, LightDM, xdotool, xscreensaver
 2. **Set LightDM as Default Display Manager** (V1.1+)
@@ -131,8 +131,9 @@ The main setup script performs all configuration automatically:
 4. **Link ~/.xprofile**: X session startup commands
 5. **Link ~/.config/autostart**: Autostart directory
 6. **Link ~/.xscreensaver**: Screensaver configuration
-7. **Run wake_on_kvm.sh**: KVM switch workarounds (see below)
-8. **Interactive Restart Prompt** (V1.1+)
+7. **Install refresh_display_kvm.sh** to `/usr/local/bin`
+8. **Run wake_on_kvm.sh**: KVM switch workarounds (see below)
+9. **Interactive Restart Prompt** (V1.1+, skipped when there is no TTY, `NONINTERACTIVE=1`, or `--Check`)
    - Option A: Reboot (graceful)
    - Option B: Restart display manager (fast)
    - Option S: Skip (manual later)
@@ -194,9 +195,9 @@ To update your configuration:
    git pull
    ```
 
-2. **Re-run setup if needed**:
+2. **Re-run desktop assert if needed**:
    ```bash
-   bash setup_xfce4.sh
+   bash assert_xfce4.sh
    ```
 
 3. **Log out and log back in** to apply X session changes

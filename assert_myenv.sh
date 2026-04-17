@@ -2,14 +2,14 @@
 
 # Assert MyEnv Personal Environment
 #
-# Orchestrates: assert_packages.sh, assert_git.sh, assert_bashrc.sh
+# Orchestrates: assert_packages.sh, assert_git.sh, assert_bashrc.sh, assert_xfce4.sh
 # Idempotent and safe to run multiple times.
 #
 # Parameters (CLI flags and values consumed here):
 #
 #   --Debug | -d
 #       Verbose logging: print which repo paths and steps run; forwarded to every
-#       child script (assert_packages, assert_git, assert_bashrc).
+#       child script (assert_packages, assert_git, assert_bashrc, assert_xfce4).
 #
 #   --Check | -c
 #       Dry-run: report what would be installed or changed without modifying the
@@ -30,6 +30,14 @@
 #   --User | -u <username>
 #       Unix account name whose home directory and ~/.ssh are configured (default: current user).
 #       Passed to assert_git.sh for SSH key paths and ownership.
+#
+#   --restart-lightdm | -r
+#       Passed to assert_xfce4.sh: restart LightDM after a live run (useful from SSH/cron).
+#
+#   --no-restart-lightdm | --skip-lightdm-restart
+#       Passed to assert_xfce4.sh: skip LightDM restart without prompting. On an interactive TTY,
+#       assert_xfce4 otherwise asks [R]estart or [S]kip; these flags bypass that and skip restart.
+#       (Default is already no restart when NONINTERACTIVE=1 or there is no TTY.)
 
 DEBUG=false
 CHECK=false
@@ -37,6 +45,7 @@ GIT_NAME=""
 GIT_EMAIL=""
 GIT_PASSPHRASE=""
 GIT_USER=""
+XFCE_EXTRA_ARGS=()
 
 script_path="${BASH_SOURCE[0]}"
 script_name="$(basename "$script_path")"
@@ -44,6 +53,7 @@ script_dir="$(cd "$(dirname "$script_path")" && pwd)"
 packages_script="$script_dir/assert_packages.sh"
 bashrc_script="$script_dir/assert_bashrc.sh"
 git_assert_script="$script_dir/assert_git.sh"
+xfce_assert_script="$script_dir/assert_xfce4.sh"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -85,9 +95,15 @@ while [[ $# -gt 0 ]]; do
             fi
             GIT_USER="$1"
             ;;
+        --restart-lightdm|-r)
+            XFCE_EXTRA_ARGS+=(--restart-lightdm)
+            ;;
+        --no-restart-lightdm|--skip-lightdm-restart)
+            XFCE_EXTRA_ARGS+=(--no-restart-lightdm)
+            ;;
         *)
             echo "Error   : Unrecognized argument $1 in $script_name."
-            echo "Usage   : $script_name [--Debug|-d] [--Check|-c] [--name|-n <git_name>] [--email|-e <git_email>] [--Passphrase|-p|-N <passphrase>] [--User|-u <username>]"
+            echo "Usage   : $script_name [--Debug|-d] [--Check|-c] [--name|-n <git_name>] [--email|-e <git_email>] [--Passphrase|-p|-N <passphrase>] [--User|-u <username>] [--restart-lightdm|-r] [--no-restart-lightdm] [--skip-lightdm-restart]"
             exit 1
             ;;
     esac
@@ -102,7 +118,7 @@ $DEBUG && common_args+=(--Debug)
 $CHECK && common_args+=(--Check)
 
 # FAILED_COUNT — number of orchestrated steps that exited non-zero (missing script, chmod, or runtime failure).
-# FAILED_STEPS — short labels (e.g. assert_packages, assert_git) for the summary line on error.
+# FAILED_STEPS — short labels (e.g. assert_packages, assert_git, assert_xfce4) for the summary line on error.
 
 FAILED_COUNT=0
 FAILED_STEPS=()
@@ -155,6 +171,11 @@ fi
 # --- ~/.bashrc hook for myenv/.bashrc ---
 if ! run_step "assert_bashrc" "$bashrc_script" "${common_args[@]}"; then
     echo "Warning : assert_bashrc step failed"
+fi
+
+# --- XFCE4 desktop, LightDM, KVM helpers (Ubuntu UI parity across lab hosts) ---
+if ! run_step "assert_xfce4" "$xfce_assert_script" "${common_args[@]}" "${XFCE_EXTRA_ARGS[@]}"; then
+    echo "Warning : assert_xfce4 step failed"
 fi
 
 # --- Summary ---

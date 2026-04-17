@@ -3,7 +3,7 @@
 # wake_on_kvm.sh — Keep Ubuntu mini-PC displays & USB awake under KVM switches
 #
 # Features:
-#   • Prevents screen blanking & DPMS video shutdown
+#   • Timed screen saver + DPMS (see ~/.xscreensaver; ~/.xprofile only disables X built-in saver)
 #   • Keeps HDMI output active even if disconnected by KVM
 #   • Enables USB keyboard/mouse wake persistently
 #   • Blocks system auto-sleep via systemd-inhibit
@@ -33,16 +33,21 @@ fi
 
 
 #############################################
-# 2. Disable screen blanking & DPMS
+# 2. Remove legacy "never blank" xset lines from ~/.xprofile
 #############################################
+# Older myenv appended `xset s off -dpms s noblank`, which blocked DPMS all night.
 XPROFILE="$HOME/.xprofile"
-XSET_CMD='xset s off -dpms s noblank'
-
-if grep -qF "$XSET_CMD" "$XPROFILE" 2>/dev/null; then
-    echo "✓ Screen blanking already disabled in $XPROFILE"
+if [ -f "$XPROFILE" ]; then
+    if grep -qF 'xset s off -dpms s noblank' "$XPROFILE" 2>/dev/null; then
+        echo "→ Removing legacy DPMS-disable line from $XPROFILE"
+        sed -i '/^xset s off -dpms s noblank$/d' "$XPROFILE"
+    fi
+    if grep -qF '# Disable screen blanking and DPMS' "$XPROFILE" 2>/dev/null; then
+        sed -i '/^# Disable screen blanking and DPMS$/d' "$XPROFILE"
+    fi
+    echo "✓ $XPROFILE checked for legacy DPMS-disable lines"
 else
-    echo "→ Adding screen blanking disable commands to $XPROFILE"
-    echo "$XSET_CMD" >> "$XPROFILE"
+    echo "⚠️  $XPROFILE not found (assert_xfce4 links it from the repo)"
 fi
 
 
@@ -65,7 +70,7 @@ else
         sudo tee "$MONITOR_CONF" > /dev/null <<EOF
 Section "Monitor"
     Identifier "$HDMI_OUT"
-    Option "DPMS" "false"
+    Option "DPMS" "true"
 EndSection
 
 Section "Device"
@@ -80,6 +85,12 @@ Section "ServerLayout"
 EndSection
 EOF
     fi
+fi
+
+# Older installs wrote Option "DPMS" "false" here; that blocked monitor power-off forever.
+if [ -f "$MONITOR_CONF" ] && grep -q 'Option "DPMS" "false"' "$MONITOR_CONF" 2>/dev/null; then
+    echo "→ Updating $MONITOR_CONF: enable DPMS for timed monitor blank"
+    sudo sed -i 's/Option "DPMS" "false"/Option "DPMS" "true"/' "$MONITOR_CONF"
 fi
 
 
@@ -147,5 +158,5 @@ fi
 #############################################
 # 7. Completion
 #############################################
-echo "✅ wake_on_kvm.sh complete. HDMI/USB wake persistence and anti-sleep settings applied."
+echo "✅ wake_on_kvm.sh complete. HDMI/USB wake persistence and systemd sleep inhibit applied."
 echo "Log written to: $LOGFILE"

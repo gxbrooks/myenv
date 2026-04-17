@@ -1,23 +1,33 @@
-# XScreenSaver configuration file
-# Generated for myenv project
+# XScreenSaver configuration file (myenv)
+# timeout: saver after this much idle. lockTimeout: lock after saver has been active this long
+# (20 min + 40 min = 60 min idle to lock). DPMS must be enabled here: with dpmsEnabled False,
+# xscreensaver disables server DPMS and the monitor never powers off.
+#
+# authWarningSlack: seconds — after a successful unlock, xscreensaver may pop up a dialog
+# reporting earlier failed login attempts. If the oldest recorded failure is within this
+# many seconds of "now", that dialog is suppressed. A very large value effectively disables
+# that notification (see man xscreensaver, authWarningSlack).
 
 mode:		one
-selected:	141
-timeout:	0:15:00
-cycle:		0:15:00
+selected:	0
+timeout:	0:20:00
+cycle:		0:20:00
 lock:		True
-lockTimeout:	0:25:00
+lockTimeout:	0:40:00
 passwdTimeout:	0:00:30
 visualID:	default
-dpmsEnabled:	False
-dpmsStandby:	2:00:00
-dpmsSuspend:	2:00:00
-dpmsOff:	4:00:00
+dpmsEnabled:	True
+dpmsStandby:	0:58:00
+dpmsSuspend:	0:59:00
+dpmsOff:	1:00:00
 grabDesktopImages:  False
 grabVideoFrames:    False
 chooseRandomImages: False
+authWarningSlack:	999999999
+verbose:		False
+splash:			False
 
-# Screen saver programs
+# Screen saver programs (selected: 0 = first). glmatrix = Matrix-style rain (xscreensaver-gl).
 programs:								      \
 				glmatrix -root				    \n
 
