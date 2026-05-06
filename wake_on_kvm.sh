@@ -18,6 +18,17 @@ mkdir -p "$(dirname "$LOGFILE")"
 exec > >(tee -a "$LOGFILE") 2>&1
 echo "========== $(date): Running wake_on_kvm.sh =========="
 
+# Prefer the invoking user's home when running under sudo.
+TARGET_USER="${SUDO_USER:-$USER}"
+if [[ -n "${SUDO_USER:-}" ]] && [[ "$SUDO_USER" != "root" ]]; then
+    TARGET_HOME="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
+else
+    TARGET_HOME="$HOME"
+fi
+if [[ -z "$TARGET_HOME" || ! -d "$TARGET_HOME" ]]; then
+    TARGET_HOME="$HOME"
+fi
+
 #############################################
 # 1. Prevent auto-sleep via systemd-inhibit
 #############################################
@@ -36,7 +47,7 @@ fi
 # 2. Remove legacy "never blank" xset lines from ~/.xprofile
 #############################################
 # Older myenv appended `xset s off -dpms s noblank`, which blocked DPMS all night.
-XPROFILE="$HOME/.xprofile"
+XPROFILE="$TARGET_HOME/.xprofile"
 if [ -f "$XPROFILE" ]; then
     if grep -qF 'xset s off -dpms s noblank' "$XPROFILE" 2>/dev/null; then
         echo "→ Removing legacy DPMS-disable line from $XPROFILE"
@@ -56,18 +67,21 @@ fi
 #############################################
 XORG_CONF_DIR="/usr/share/X11/xorg.conf.d"
 MONITOR_CONF="$XORG_CONF_DIR/10-monitor.conf"
-HDMI_OUT=$(xrandr | awk '/ connected/{print $1; exit}')
-
-if [ -z "$HDMI_OUT" ]; then
-    echo "⚠️  No active HDMI output detected via xrandr, skipping HDMI config"
+if [[ -z "${DISPLAY:-}" ]] || ! command -v xrandr >/dev/null 2>&1; then
+    echo "⚠️  DISPLAY/xrandr unavailable (likely SSH or headless); skipping HDMI probe/config"
 else
-    echo "Detected HDMI output: $HDMI_OUT"
-    if [ -f "$MONITOR_CONF" ] && grep -q "$HDMI_OUT" "$MONITOR_CONF"; then
-        echo "✓ HDMI config already present in $MONITOR_CONF"
+    HDMI_OUT="$(xrandr 2>/dev/null | awk '/ connected/{print $1; exit}' || true)"
+
+    if [ -z "$HDMI_OUT" ]; then
+        echo "⚠️  No active HDMI output detected via xrandr, skipping HDMI config"
     else
-        echo "→ Writing persistent HDMI configuration to $MONITOR_CONF"
-        sudo mkdir -p "$XORG_CONF_DIR"
-        sudo tee "$MONITOR_CONF" > /dev/null <<EOF
+        echo "Detected HDMI output: $HDMI_OUT"
+        if [ -f "$MONITOR_CONF" ] && grep -q "$HDMI_OUT" "$MONITOR_CONF"; then
+            echo "✓ HDMI config already present in $MONITOR_CONF"
+        else
+            echo "→ Writing persistent HDMI configuration to $MONITOR_CONF"
+            sudo mkdir -p "$XORG_CONF_DIR"
+            sudo tee "$MONITOR_CONF" > /dev/null <<EOF
 Section "Monitor"
     Identifier "$HDMI_OUT"
     Option "DPMS" "true"
@@ -84,6 +98,7 @@ Section "ServerLayout"
     Option "AutoAddGPU" "false"
 EndSection
 EOF
+        fi
     fi
 fi
 
