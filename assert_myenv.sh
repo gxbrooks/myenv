@@ -2,7 +2,8 @@
 
 # Assert MyEnv Personal Environment
 #
-# Orchestrates: assert_packages.sh, assert_git.sh, assert_bashrc.sh, assert_xfce4.sh
+# Orchestrates: assert_packages.sh (includes kitty + kitty-terminfo for remote TERM=xterm-kitty),
+# assert_git.sh, assert_bashrc.sh, assert_dotfiles.sh, assert_extensions.sh, assert_xfce4.sh
 # Idempotent and safe to run multiple times.
 #
 # Parameters (CLI flags and values consumed here):
@@ -54,6 +55,8 @@ packages_script="$script_dir/assert_packages.sh"
 bashrc_script="$script_dir/assert_bashrc.sh"
 git_assert_script="$script_dir/assert_git.sh"
 xfce_assert_script="$script_dir/assert_xfce4.sh"
+dotfiles_assert_script="$script_dir/assert/assert_dotfiles.sh"
+extensions_assert_script="$script_dir/assert/assert_extensions.sh"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -171,6 +174,16 @@ fi
 # --- ~/.bashrc hook for myenv/.bashrc ---
 if ! run_step "assert_bashrc" "$bashrc_script" "${common_args[@]}"; then
     echo "Warning : assert_bashrc step failed"
+fi
+
+# --- Cursor settings/keybindings managed in repo dotfiles/cursor ---
+if ! run_step "assert_dotfiles" "$dotfiles_assert_script" "${common_args[@]}"; then
+    echo "Warning : assert_dotfiles step failed"
+fi
+
+# --- Cursor extension list enforcement from repo dotfiles/cursor/extensions.txt ---
+if ! run_step "assert_extensions" "$extensions_assert_script" "${common_args[@]}"; then
+    echo "Warning : assert_extensions step failed"
 fi
 
 # --- XFCE4 desktop, LightDM, KVM helpers (Ubuntu UI parity across lab hosts) ---

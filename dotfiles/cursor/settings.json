@@ -1,0 +1,20 @@
+{
+  "docker.extension.enableComposeLanguageServer": false,
+  "workbench.editorAssociations": {
+    "*.copilotmd": "vscode.markdown.preview.editor",
+    "*.mermaid": "default",
+    "*.pdf": "latex-workshop-pdf-hook"
+  },
+  "files.associations": {
+    "*.mermaid": "mermaid.architecture"
+  },
+  "github.copilot.nextEditSuggestions.enabled": true,
+  "workbench.colorTheme": "Cursor Dark High Contrast",
+  "redhat.telemetry.enabled": true,
+  "window.commandCenter": true,
+  "files.watcherExclude": {
+    "**/.bloop": true,
+    "**/.metals": true
+  },
+  "window.confirmSaveUntitledWorkspace": false
+}

@@ -207,8 +207,49 @@ DESKTOP
     return 0
 }
 
+# Ensure Debian x-terminal-emulator alternative points at kitty (XFCE helpers use it).
+ensure_kitty_default_terminal() {
+    local kitty_bin="/usr/bin/kitty"
+
+    if $CHECK; then
+        if [[ -x "$kitty_bin" ]]; then
+            local current
+            current=$(readlink -f /etc/alternatives/x-terminal-emulator 2>/dev/null || true)
+            if [[ "$current" == "$kitty_bin" ]]; then
+                echo "Check   : x-terminal-emulator already resolves to kitty"
+            else
+                echo "Check   : Would run: sudo update-alternatives --set x-terminal-emulator $kitty_bin"
+            fi
+        else
+            echo "Check   : Would set x-terminal-emulator to kitty after the kitty package is installed"
+        fi
+        return 0
+    fi
+
+    if [[ ! -x "$kitty_bin" ]]; then
+        echo "Warning : kitty not found at $kitty_bin; cannot set default terminal"
+        return 1
+    fi
+
+    local current
+    current=$(readlink -f /etc/alternatives/x-terminal-emulator 2>/dev/null || true)
+    if [[ "$current" == "$kitty_bin" ]]; then
+        $DEBUG && echo "Debug   : x-terminal-emulator already resolves to kitty"
+        echo "Result  : Default terminal (x-terminal-emulator) is already kitty"
+        return 0
+    fi
+
+    echo "Info    : Setting default terminal to kitty (update-alternatives x-terminal-emulator)"
+    if sudo update-alternatives --set x-terminal-emulator "$kitty_bin"; then
+        echo "Result  : Default terminal set to kitty"
+        return 0
+    fi
+    echo "Warning : Could not set x-terminal-emulator to kitty (update-alternatives failed)"
+    return 1
+}
+
 EXTERNAL_REPO_PACKAGES=(sublime-text google-chrome-stable)
-STANDARD_PACKAGES=(terminator gnome-keyring libsecret-1-0 seahorse gh openssh-client keychain okular xfce4-screenshooter)
+STANDARD_PACKAGES=(kitty kitty-terminfo gnome-keyring libsecret-1-0 seahorse gh openssh-client keychain okular xfce4-screenshooter)
 NETWORK_PACKAGES=(nmap speedtest-cli)
 ALL_APT_PACKAGES=("${EXTERNAL_REPO_PACKAGES[@]}" "${STANDARD_PACKAGES[@]}" "${NETWORK_PACKAGES[@]}")
 
@@ -246,6 +287,8 @@ if ! install_cursor; then
     fi
 fi
 
+ensure_kitty_default_terminal || true
+
 if $CHECK; then
     echo "Check   : Would install packages/tools as needed (assert_packages)"
     echo "Result  : assert_packages check complete"
@@ -277,6 +320,14 @@ if ! $CHECK; then
         $DEBUG && echo "Debug   : ✓ cursor is installed"
     else
         echo "Warning : cursor installation verification failed"
+    fi
+    if [[ -x /usr/bin/kitty ]]; then
+        cur=$(readlink -f /etc/alternatives/x-terminal-emulator 2>/dev/null || true)
+        if [[ "$cur" == "/usr/bin/kitty" ]]; then
+            $DEBUG && echo "Debug   : ✓ x-terminal-emulator is kitty"
+        else
+            echo "Warning : x-terminal-emulator is not kitty (currently: ${cur:-unknown})"
+        fi
     fi
 fi
 

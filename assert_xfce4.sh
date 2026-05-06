@@ -49,6 +49,112 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$SCRIPT_DIR"
 
+MYENV_KITTY_DESKTOP_NAME="myenv-kitty.desktop"
+MYENV_KITTY_DESKTOP_SOURCE="$PROJECT_DIR/xfce/$MYENV_KITTY_DESKTOP_NAME"
+
+# Pick the main horizontal bar: bottom-ish position (various Xfce p= values) with full width,
+# else the widest panel by /length (typically 100 for the primary bar).
+myenv_xfce_pick_target_panel() {
+    local prop pnum pos p len
+    local candidate_bottom="" candidate_wide="" wide_max=-1
+    while IFS= read -r prop; do
+        [[ "$prop" =~ /panels/panel-([0-9]+)/position ]] || continue
+        pnum="${BASH_REMATCH[1]}"
+        pos=$(xfconf-query -c xfce4-panel -p "$prop" -v 2>/dev/null || true)
+        [[ "$pos" =~ ^p=([0-9]+) ]] || continue
+        p="${BASH_REMATCH[1]}"
+        len=$(xfconf-query -c xfce4-panel -p "/panels/panel-$pnum/length" -v 2>/dev/null || echo 0)
+        case "$p" in
+            8|10|11|12)
+                if [[ "$len" -eq 100 ]]; then
+                    candidate_bottom="$pnum"
+                fi
+                ;;
+        esac
+        if [[ "$len" -gt "$wide_max" ]]; then
+            wide_max=$len
+            candidate_wide="$pnum"
+        fi
+    done < <(xfconf-query -c xfce4-panel -l 2>/dev/null | grep -E '^/panels/panel-[0-9]+/position$' || true)
+
+    if [[ -n "$candidate_bottom" ]]; then
+        echo "$candidate_bottom"
+    elif [[ -n "$candidate_wide" ]]; then
+        echo "$candidate_wide"
+    else
+        echo "1"
+    fi
+}
+
+myenv_xfce_max_plugin_id() {
+    xfconf-query -c xfce4-panel -l 2>/dev/null \
+        | grep -oE '/plugins/plugin-[0-9]+/' \
+        | sed 's|/plugins/plugin-||;s|/||' \
+        | sort -n \
+        | uniq \
+        | tail -1
+}
+
+myenv_xfce_read_panel_plugin_ids() {
+    local panel_id=$1
+    xfconf-query -c xfce4-panel -p "/panels/panel-$panel_id/plugin-ids" -v 2>/dev/null | grep -E '^[0-9]+$' || true
+}
+
+# Insert after the first expanding separator (Xfce’s usual flex spacer), else at the middle index.
+myenv_xfce_kitty_insert_index() {
+    local ids=("$@")
+    local i pid ptype expand
+    for i in "${!ids[@]}"; do
+        pid="${ids[$i]}"
+        ptype=$(xfconf-query -c xfce4-panel -p "/plugins/plugin-$pid" -v 2>/dev/null || true)
+        if [[ "$ptype" == "separator" ]]; then
+            expand=$(xfconf-query -c xfce4-panel -p "/plugins/plugin-$pid/expand" -v 2>/dev/null || true)
+            if [[ "$expand" == "true" ]]; then
+                echo $((i + 1))
+                return 0
+            fi
+        fi
+    done
+    echo $((${#ids[@]} / 2))
+}
+
+myenv_xfce_find_myenv_kitty_plugin() {
+    local pid ptype line item
+    while IFS= read -r line; do
+        [[ "$line" =~ ^/plugins/plugin-([0-9]+)/items$ ]] || continue
+        pid="${BASH_REMATCH[1]}"
+        ptype=$(xfconf-query -c xfce4-panel -p "/plugins/plugin-$pid" -v 2>/dev/null || true)
+        [[ "$ptype" == "launcher" ]] || continue
+        while IFS= read -r item; do
+            if [[ "$item" == "$MYENV_KITTY_DESKTOP_NAME" ]]; then
+                echo "$pid"
+                return 0
+            fi
+        done < <(xfconf-query -c xfce4-panel -p "/plugins/plugin-$pid/items" -v 2>/dev/null | grep -E '^[[:alnum:]_-]+\.desktop$' || true)
+    done < <(xfconf-query -c xfce4-panel -l 2>/dev/null | grep -E '^/plugins/plugin-[0-9]+/items$' || true)
+    return 1
+}
+
+myenv_xfce_plugin_on_panel() {
+    local panel_id=$1
+    local want=$2
+    local pid
+    while IFS= read -r pid; do
+        [[ "$pid" == "$want" ]] && return 0
+    done < <(myenv_xfce_read_panel_plugin_ids "$panel_id")
+    return 1
+}
+
+myenv_xfce_sync_kitty_launcher_file() {
+    local plugin_id=$1
+    local dir="$HOME/.config/xfce4/panel/launcher-$plugin_id"
+    mkdir -p "$dir"
+    if [[ -f "$dir/$MYENV_KITTY_DESKTOP_NAME" ]] && cmp -s "$MYENV_KITTY_DESKTOP_SOURCE" "$dir/$MYENV_KITTY_DESKTOP_NAME"; then
+        return 0
+    fi
+    cp -f "$MYENV_KITTY_DESKTOP_SOURCE" "$dir/$MYENV_KITTY_DESKTOP_NAME"
+}
+
 if $CHECK; then
     INTERACTIVE=false
 elif [ -t 0 ] && [ "${NONINTERACTIVE:-}" != "1" ]; then
@@ -241,6 +347,42 @@ else
 fi
 
 #############################################
+# 5a. Link ~/.config/kitty/kitty.conf to repository kitty/kitty.conf
+#############################################
+echo "🔗 Setting up Kitty config link..."
+
+KITTY_CONF_SOURCE="$PROJECT_DIR/kitty/kitty.conf"
+KITTY_CONF_DIR="$HOME/.config/kitty"
+KITTY_CONF_TARGET="$KITTY_CONF_DIR/kitty.conf"
+
+if [ ! -f "$KITTY_CONF_SOURCE" ]; then
+    echo "⚠️  $KITTY_CONF_SOURCE not found; skipping Kitty config link"
+elif [ -d "$KITTY_CONF_TARGET" ]; then
+    echo "⚠️  $KITTY_CONF_TARGET is a directory; not replacing; fix manually"
+elif [ -L "$KITTY_CONF_TARGET" ] && [ "$(readlink "$KITTY_CONF_TARGET")" = "$KITTY_CONF_SOURCE" ]; then
+    echo "✓ ~/.config/kitty/kitty.conf already linked to repository kitty/kitty.conf"
+elif [ -e "$KITTY_CONF_TARGET" ]; then
+    if $CHECK; then
+        echo "Check   : Would mv $KITTY_CONF_TARGET to ${KITTY_CONF_TARGET}.bak and: ln -s $KITTY_CONF_SOURCE $KITTY_CONF_TARGET"
+    else
+        echo "→ Backing up existing kitty.conf to kitty.conf.bak"
+        mv "$KITTY_CONF_TARGET" "${KITTY_CONF_TARGET}.bak"
+        mkdir -p "$KITTY_CONF_DIR"
+        ln -s "$KITTY_CONF_SOURCE" "$KITTY_CONF_TARGET"
+        echo "✓ ~/.config/kitty/kitty.conf linked to repository kitty/kitty.conf"
+    fi
+else
+    if $CHECK; then
+        echo "Check   : Would mkdir -p $KITTY_CONF_DIR && ln -s $KITTY_CONF_SOURCE $KITTY_CONF_TARGET"
+    else
+        echo "→ Creating ~/.config/kitty and kitty.conf link"
+        mkdir -p "$KITTY_CONF_DIR"
+        ln -s "$KITTY_CONF_SOURCE" "$KITTY_CONF_TARGET"
+        echo "✓ ~/.config/kitty/kitty.conf linked to repository kitty/kitty.conf"
+    fi
+fi
+
+#############################################
 # 5b. Xfce: do not open Display settings on monitor hotplug / resume
 #############################################
 # Xfce stores "Configure new displays when connected" as channel displays, key /Notify (1=on).
@@ -278,6 +420,72 @@ if command -v xfconf-query >/dev/null 2>&1; then
     fi
 else
     echo "⚠️  xfconf-query not in PATH; skipped displays/Notify"
+fi
+
+#############################################
+# 5c. Xfce panel: Kitty launcher on primary bar (after first expanding separator)
+#############################################
+echo "🔧 Xfce panel: Kitty launcher (bottom primary bar, centered via expand spacer)..."
+if [[ ! -f "$MYENV_KITTY_DESKTOP_SOURCE" ]]; then
+    echo "⚠️  $MYENV_KITTY_DESKTOP_SOURCE not found; skipping Kitty panel launcher"
+elif ! command -v xfconf-query >/dev/null 2>&1; then
+    echo "⚠️  xfconf-query not in PATH; skipped Kitty panel launcher"
+elif ! xfconf-query -c xfce4-panel -l >/dev/null 2>&1; then
+    echo "⚠️  No xfce4-panel xfconf channel (log in to Xfce once, then re-run assert_xfce4)"
+else
+    target_panel=$(myenv_xfce_pick_target_panel)
+    existing_pid=$(myenv_xfce_find_myenv_kitty_plugin || true)
+
+    if [[ -n "$existing_pid" ]] && myenv_xfce_plugin_on_panel "$target_panel" "$existing_pid"; then
+        if $CHECK; then
+            echo "✓ Kitty panel launcher already on primary panel $target_panel (plugin $existing_pid)"
+        else
+            myenv_xfce_sync_kitty_launcher_file "$existing_pid"
+            echo "✓ Kitty panel launcher present on panel $target_panel (plugin $existing_pid); desktop file synced"
+        fi
+    elif [[ -n "$existing_pid" ]]; then
+        if $CHECK; then
+            echo "Check   : Kitty launcher exists on plugin $existing_pid (not on computed primary panel $target_panel); leaving layout unchanged"
+        else
+            myenv_xfce_sync_kitty_launcher_file "$existing_pid"
+            echo "⚠️  Kitty launcher is on plugin $existing_pid (not primary panel $target_panel); not duplicating; desktop file synced"
+        fi
+    else
+        mapfile -t panel_ids < <(myenv_xfce_read_panel_plugin_ids "$target_panel")
+        if [[ ${#panel_ids[@]} -eq 0 ]]; then
+            echo "⚠️  No plugins on panel-$target_panel; skipping Kitty launcher"
+        else
+            insert_idx=$(myenv_xfce_kitty_insert_index "${panel_ids[@]}")
+            max_pid=$(myenv_xfce_max_plugin_id)
+            [[ "$max_pid" =~ ^[0-9]+$ ]] || max_pid=0
+            new_pid=$((max_pid + 1))
+            if $CHECK; then
+                echo "Check   : Would add launcher plugin $new_pid to panel-$target_panel at index $insert_idx (after first expand separator or mid-bar)"
+                echo "Check   : Would create ~/.config/xfce4/panel/launcher-$new_pid/$MYENV_KITTY_DESKTOP_NAME and xfconf-query plugin + plugin-ids"
+                if [[ -n "${DISPLAY:-}" ]]; then
+                    echo "Check   : Would run: xfce4-panel -r (reload panel)"
+                fi
+            else
+                mkdir -p "$HOME/.config/xfce4/panel/launcher-$new_pid"
+                cp -f "$MYENV_KITTY_DESKTOP_SOURCE" "$HOME/.config/xfce4/panel/launcher-$new_pid/$MYENV_KITTY_DESKTOP_NAME"
+                xfconf-query -c xfce4-panel -p "/plugins/plugin-$new_pid" -t string -s launcher --create
+                xfconf-query -c xfce4-panel -p "/plugins/plugin-$new_pid/items" -t string -s "$MYENV_KITTY_DESKTOP_NAME" -a --create
+
+                new_order=("${panel_ids[@]:0:insert_idx}" "$new_pid" "${panel_ids[@]:insert_idx}")
+                xfconf-query -c xfce4-panel -p "/panels/panel-$target_panel/plugin-ids" -r 2>/dev/null || true
+                qargs=()
+                for id in "${new_order[@]}"; do
+                    qargs+=(-t int -s "$id")
+                done
+                xfconf-query -c xfce4-panel -p "/panels/panel-$target_panel/plugin-ids" -n "${qargs[@]}" -a --create
+
+                if [[ -n "${DISPLAY:-}" ]] && command -v xfce4-panel >/dev/null 2>&1; then
+                    xfce4-panel -r 2>/dev/null || true
+                fi
+                echo "✓ Added Kitty launcher to panel $target_panel (plugin $new_pid, insert index $insert_idx)"
+            fi
+        fi
+    fi
 fi
 
 #############################################
@@ -397,7 +605,7 @@ echo ""
 if $CHECK; then
     echo "✅ assert_xfce4 check complete (no changes applied)"
     echo ""
-    echo "Summary (dry-run): would ensure XFCE4/LightDM packages, session defaults, repo symlinks, KVM helpers."
+    echo "Summary (dry-run): would ensure XFCE4/LightDM packages, session defaults, repo symlinks, Kitty config, Kitty panel launcher, KVM helpers."
     if [[ "$NEEDS_REBOOT" == "true" ]]; then
         echo "Check   : After a live run, LightDM restart would apply the new display manager and session."
     fi
@@ -410,7 +618,7 @@ echo "✅ assert_xfce4.sh complete!"
 echo ""
 echo "Should-dos 1–3 (this run):"
 echo "  1. Packages, LightDM default, XFCE session defaults"
-echo "  2. Repo symlinks (~/.xprofile, autostart, .xscreensaver) and /usr/local/bin helpers"
+echo "  2. Repo symlinks (~/.xprofile, autostart, kitty.conf, .xscreensaver), Xfce Kitty panel launcher, /usr/local/bin helpers"
 echo "  3. KVM persistence (wake_on_kvm.sh when sudo granted)"
 echo ""
 echo "Summary of changes:"
@@ -419,6 +627,8 @@ echo "  • LightDM set as default display manager"
 echo "  • XFCE4 set as default session (system-wide and user-specific)"
 echo "  • ~/.xprofile → $PROJECT_DIR/.xprofile"
 echo "  • ~/.config/autostart → $PROJECT_DIR/autostart"
+echo "  • ~/.config/kitty/kitty.conf → $PROJECT_DIR/kitty/kitty.conf (scrollback 50k lines)"
+echo "  • Xfce: Kitty launcher on primary panel (myenv-kitty.desktop, after expand separator)"
 echo "  • xfconf displays/Notify → 0 (no Display dialog on monitor reconnect)"
 echo "  • ~/.xscreensaver → $PROJECT_DIR/.xscreensaver"
 echo "  • refresh_display_kvm.sh installed to /usr/local/bin"

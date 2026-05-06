@@ -44,7 +44,15 @@ This project provides a complete XFCE4 desktop environment configuration with KV
 ```
 myenv/
 ├── README.md                          # This file
+├── assert/                            # Cursor/dotfiles assertions
+│   ├── assert_dotfiles.sh             # Cursor settings/keybindings symlink assert
+│   └── assert_extensions.sh           # Cursor extension assert from extensions.txt
 ├── assert_xfce4.sh                    # XFCE4/LightDM/KVM desktop assert (run via assert_myenv.sh or standalone)
+├── dotfiles/
+│   └── cursor/
+│       ├── settings.json              # Cursor settings under version control
+│       ├── keybindings.json           # Cursor keybindings under version control
+│       └── extensions.txt             # Cursor extension IDs under version control
 ├── wake_on_kvm.sh                     # KVM switch workarounds
 ├── .xprofile                          # X session startup (xset commands)
 ├── .xscreensaver                      # Screensaver config (glmatrix)
@@ -113,6 +121,19 @@ The setup script creates symbolic links in your home directory pointing to this 
 - Changes to the repository are immediately reflected in your environment
 - Easy to version control your configuration
 - Can sync across multiple systems
+
+### Cursor Dotfiles
+
+Cursor configuration now lives in this repository:
+
+| Your Home Directory | → | Repository |
+|---------------------|---|------------|
+| `~/.config/Cursor/User/settings.json` | → | `~/myenv/dotfiles/cursor/settings.json` |
+| `~/.config/Cursor/User/keybindings.json` | → | `~/myenv/dotfiles/cursor/keybindings.json` |
+
+Use:
+- `bash assert/assert_dotfiles.sh` to assert symlinks (or import first-time files)
+- `bash assert/assert_extensions.sh` to assert Cursor extensions from `dotfiles/cursor/extensions.txt`
 
 ## How It Works
 
