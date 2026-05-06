@@ -123,12 +123,43 @@ $DEBUG && echo "Debug   : INSTALL_DIR=$INSTALL_DIR"
 $DEBUG && echo "Debug   : CHECK=$CHECK"
 $DEBUG && echo "Debug   : SKIP_EXTENSIONS=$SKIP_EXTENSIONS"
 
+normalize_repo_url() {
+    local url="$1"
+    local normalized="$url"
+    normalized="${normalized#ssh://git@github.com/}"
+    normalized="${normalized#git@github.com:}"
+    normalized="${normalized#https://github.com/}"
+    normalized="${normalized%.git}"
+    echo "$normalized"
+}
+
+required_assert_files_present() {
+    local required=(
+        "$INSTALL_DIR/assert_packages.sh"
+        "$INSTALL_DIR/assert_git.sh"
+        "$INSTALL_DIR/assert_bashrc.sh"
+        "$INSTALL_DIR/assert_xfce4.sh"
+        "$INSTALL_DIR/assert/assert_dotfiles.sh"
+        "$INSTALL_DIR/assert/assert_extensions.sh"
+    )
+    local missing=0
+    local path
+    for path in "${required[@]}"; do
+        if [[ ! -f "$path" ]]; then
+            echo "Warning : Missing required file: $path"
+            missing=1
+        fi
+    done
+    [[ $missing -eq 0 ]]
+}
+
 ensure_repo() {
     if [[ -d "$INSTALL_DIR/.git" ]]; then
         echo "Info    : Existing repository found at $INSTALL_DIR"
         local current_origin=""
         current_origin="$(git -C "$INSTALL_DIR" remote get-url origin 2>/dev/null || true)"
-        if [[ -n "$current_origin" && "$current_origin" != "$REPO_URL" ]]; then
+        if [[ -n "$current_origin" ]] && \
+           [[ "$(normalize_repo_url "$current_origin")" != "$(normalize_repo_url "$REPO_URL")" ]]; then
             echo "Warning : Existing origin ($current_origin) differs from requested repo ($REPO_URL)"
         fi
 
@@ -137,16 +168,45 @@ ensure_repo() {
             return 0
         fi
 
+        local had_local_changes=false
+        local stashed_changes=false
         if [[ -n "$(git -C "$INSTALL_DIR" status --porcelain 2>/dev/null)" ]]; then
-            echo "Warning : Repository has local changes; skipping git pull/update"
-            echo "Info    : Continuing with asserts on current working tree"
-            return 0
+            had_local_changes=true
+            echo "Info    : Local changes detected; stashing before update"
+            git -C "$INSTALL_DIR" stash push -u -m "install_myenv_autostash_$(date +%s)" >/dev/null
+            stashed_changes=true
         fi
 
-        echo "Info    : Updating existing repository (fast-forward only)"
+        echo "Info    : Updating existing repository"
         git -C "$INSTALL_DIR" fetch --all --prune
         if ! git -C "$INSTALL_DIR" pull --ff-only; then
-            echo "Warning : Could not fast-forward pull; continuing with local checkout"
+            echo "Info    : Fast-forward pull not possible; trying rebase update"
+            if ! git -C "$INSTALL_DIR" pull --rebase; then
+                echo "Warning : Could not update repository via pull --ff-only or pull --rebase"
+                if $stashed_changes; then
+                    echo "Info    : Restoring stashed local changes after failed update"
+                    git -C "$INSTALL_DIR" stash pop >/dev/null || true
+                fi
+                return 0
+            fi
+        fi
+
+        if $stashed_changes; then
+            echo "Info    : Re-applying stashed local changes"
+            if ! git -C "$INSTALL_DIR" stash pop >/dev/null; then
+                echo "Warning : Could not automatically re-apply stashed changes; resolve manually in $INSTALL_DIR"
+            fi
+        fi
+
+        if ! required_assert_files_present; then
+            echo "Warning : Existing repository still missing required files after update"
+            local backup_dir="${INSTALL_DIR}.bak.$(date +%Y%m%d%H%M%S)"
+            echo "Info    : Moving current directory to $backup_dir and re-cloning"
+            mv "$INSTALL_DIR" "$backup_dir"
+            git clone "$REPO_URL" "$INSTALL_DIR"
+            if $had_local_changes; then
+                echo "Warning : Previous local changes are preserved in: $backup_dir"
+            fi
         fi
         return 0
     fi
