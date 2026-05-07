@@ -423,7 +423,61 @@ else
 fi
 
 #############################################
-# 5c. Xfce panel: Kitty launcher on primary bar (after first expanding separator)
+# 5c. Xfwm4 compositor compatibility for AMD iGPU freeze workaround
+#############################################
+# On some AMD iGPU systems, xfwm4's default/auto vblank path can freeze desktop rendering.
+# Force XPresent-backed vblank and keep compositing enabled.
+echo "🔧 Xfwm4 compositor compatibility (AMD freeze workaround)..."
+if command -v xfconf-query >/dev/null 2>&1; then
+    if $CHECK; then
+        if cur_vblank=$(xfconf-query -c xfwm4 -p /general/vblank_mode -v 2>/dev/null); then
+            if [[ "$cur_vblank" == "xpresent" ]]; then
+                echo "✓ xfwm4 /general/vblank_mode is already xpresent"
+            else
+                echo "Check   : Would set xfwm4 /general/vblank_mode to xpresent (currently $cur_vblank)"
+            fi
+        else
+            echo "Check   : Would set xfwm4 /general/vblank_mode to xpresent when xfwm4 channel exists"
+        fi
+
+        if cur_comp=$(xfconf-query -c xfwm4 -p /general/use_compositing -v 2>/dev/null); then
+            if [[ "$cur_comp" == "true" ]]; then
+                echo "✓ xfwm4 /general/use_compositing is already true"
+            else
+                echo "Check   : Would set xfwm4 /general/use_compositing to true (currently $cur_comp)"
+            fi
+        else
+            echo "Check   : Would set xfwm4 /general/use_compositing to true when xfwm4 channel exists"
+        fi
+    else
+        if xfconf-query -c xfwm4 -lv >/dev/null 2>&1; then
+            cur_vblank=$(xfconf-query -c xfwm4 -p /general/vblank_mode -v 2>/dev/null || true)
+            if [[ "$cur_vblank" != "xpresent" ]]; then
+                xfconf-query -c xfwm4 -p /general/vblank_mode -s xpresent -t string 2>/dev/null || \
+                    xfconf-query -c xfwm4 -p /general/vblank_mode -n -t string -s xpresent --create
+                echo "✓ Set xfwm4 /general/vblank_mode to xpresent"
+            else
+                echo "✓ xfwm4 /general/vblank_mode already xpresent"
+            fi
+
+            cur_comp=$(xfconf-query -c xfwm4 -p /general/use_compositing -v 2>/dev/null || true)
+            if [[ "$cur_comp" != "true" ]]; then
+                xfconf-query -c xfwm4 -p /general/use_compositing -s true -t bool 2>/dev/null || \
+                    xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s true --create
+                echo "✓ Set xfwm4 /general/use_compositing to true"
+            else
+                echo "✓ xfwm4 /general/use_compositing already true"
+            fi
+        else
+            echo "⚠️  xfconf channel xfwm4 not found; skipped (log in to Xfce once, then re-run assert_xfce4)"
+        fi
+    fi
+else
+    echo "⚠️  xfconf-query not in PATH; skipped xfwm4 compatibility settings"
+fi
+
+#############################################
+# 5d. Xfce panel: Kitty launcher on primary bar (after first expanding separator)
 #############################################
 echo "🔧 Xfce panel: Kitty launcher (bottom primary bar, centered via expand spacer)..."
 if [[ ! -f "$MYENV_KITTY_DESKTOP_SOURCE" ]]; then
@@ -630,6 +684,7 @@ echo "  • ~/.config/autostart → $PROJECT_DIR/autostart"
 echo "  • ~/.config/kitty/kitty.conf → $PROJECT_DIR/kitty/kitty.conf (scrollback 50k lines)"
 echo "  • Xfce: Kitty launcher on primary panel (myenv-kitty.desktop, after expand separator)"
 echo "  • xfconf displays/Notify → 0 (no Display dialog on monitor reconnect)"
+echo "  • xfwm4 compositor: vblank_mode=xpresent, use_compositing=true (AMD freeze workaround)"
 echo "  • ~/.xscreensaver → $PROJECT_DIR/.xscreensaver"
 echo "  • refresh_display_kvm.sh installed to /usr/local/bin"
 echo "  • KVM switch persistence configured (wake_on_kvm.sh)"
