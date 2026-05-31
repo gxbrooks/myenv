@@ -2,18 +2,38 @@
 #
 # assert_xfce4.sh — Assert XFCE4 desktop environment with myenv configuration
 #
-# Installs XFCE4/LightDM and related packages, links dotfiles from this repo,
-# installs KVM helpers. Idempotent. Invoked by assert_myenv.sh or run standalone.
+# WHAT IT DOES / WHEN TO RUN
+#   Installs XFCE4/LightDM and related packages, sets them as the defaults, links the
+#   repo dotfiles (~/.xprofile, autostart, kitty.conf, .xscreensaver), places the Kitty
+#   panel launcher, installs the KVM helpers, and delegates all AMD iGPU freeze mitigation
+#   to assert/assert_amdgpu.sh. Idempotent. Lives in assert/; invoked by assert_myenv.sh
+#   (or install_myenv.sh) or run standalone. The repo root is the parent of assert/.
 #
-# Usage: assert_xfce4.sh [--Debug|-d] [--Check|-c] [--restart-lightdm|-r] [--no-restart-lightdm]
+# USAGE
+#   assert_xfce4.sh [--Debug|-d] [--Check|-c] [--restart-lightdm|-r] [--no-restart-lightdm]
+#                   [--skip-firmware-update] [--amdgpu-dc-off | --amdgpu-dc-on]
+#                   [--suppress-volman-noise] [--help|-h]
 #
-#   --Check  Dry-run: report packages and changes that would be made (no apt, no sudo writes).
+# FLAGS
+#   --Check, -c            Dry-run: report packages and changes that would be made
+#                          (no apt, no sudo writes). Forwarded to assert/assert_amdgpu.sh.
+#   --Debug, -d            Verbose logging (forwarded to child scripts).
+#   --restart-lightdm, -r  Restart LightDM after a live run without prompting (SSH/cron).
+#   --no-restart-lightdm   Skip the LightDM restart without prompting.
+#                          (Default: prompt [R]estart/[S]kip on a TTY; skip when non-interactive.
+#                           Never restarts in --Check mode or when a full reboot is pending.)
+#   --skip-firmware-update Forwarded to assert_amdgpu.sh: do not upgrade linux-firmware.
+#   --amdgpu-dc-off        Forwarded to assert_amdgpu.sh: opt-in last-resort kernel
+#                          workaround (amdgpu.dc=0). See that script's --help for the warning.
+#   --amdgpu-dc-on         Forwarded to assert_amdgpu.sh: revert --amdgpu-dc-off.
+#   --suppress-volman-noise  Disable thunar-volman automount so the KVM switch stops spamming
+#                          "Unsupported USB device type" into ~/.xsession-errors. (Benign
+#                          noise; disables USB-drive auto-mounting for this user.)
+#   --help, -h             Show this help and exit.
 #
-#   After a successful live run, should-dos 1–3 (packages + LightDM/XFCE session defaults,
-#   repo symlinks and helpers, apply session) finish with a LightDM restart when appropriate.
-#   On an interactive TTY you are prompted: [R]estart LightDM or [S]kip (default R on Enter).
-#   Use --no-restart-lightdm to skip without prompting; use --restart-lightdm to restart
-#   without prompting when non-interactive (e.g. SSH/cron). Restart is never performed in --Check mode.
+#   AMD iGPU freeze (Lab3 Raphael iGPU "dm_irq_work_func hogged CPU" bug that stalls the
+#   xfwm4 compositor; mouse/keyboard appear dead but SSH stays alive) is handled by
+#   assert/assert_amdgpu.sh, which this script runs once the XFCE session is configured.
 #
 # Requires: sudo privileges for live (non-check) runs
 
@@ -21,7 +41,15 @@ DEBUG=false
 CHECK=false
 RESTART_LIGHTDM_EXPLICIT=false
 RESTART_LIGHTDM=false
+SKIP_FIRMWARE_UPDATE=false
+AMDGPU_DC_OFF=false
+AMDGPU_DC_ON=false
+SUPPRESS_VOLMAN_NOISE=false
 script_name="$(basename "${BASH_SOURCE[0]}")"
+
+show_help() {
+    sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^#\s\{0,1\}//'
+}
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -35,19 +63,31 @@ while [[ $# -gt 0 ]]; do
             RESTART_LIGHTDM=false
             RESTART_LIGHTDM_EXPLICIT=true
             ;;
+        --skip-firmware-update) SKIP_FIRMWARE_UPDATE=true ;;
+        --amdgpu-dc-off) AMDGPU_DC_OFF=true ;;
+        --amdgpu-dc-on) AMDGPU_DC_ON=true ;;
+        --suppress-volman-noise) SUPPRESS_VOLMAN_NOISE=true ;;
+        --help|-h) show_help; exit 0 ;;
         *)
             echo "Error   : Unrecognized argument $1 in $script_name." >&2
-            echo "Usage   : $script_name [--Debug|-d] [--Check|-c] [--restart-lightdm|-r] [--no-restart-lightdm]" >&2
+            echo "Usage   : $script_name [--Debug|-d] [--Check|-c] [--restart-lightdm|-r] [--no-restart-lightdm] [--skip-firmware-update] [--amdgpu-dc-off|--amdgpu-dc-on] [--suppress-volman-noise] [--help|-h]" >&2
             exit 1
             ;;
     esac
     shift
 done
 
+if $AMDGPU_DC_OFF && $AMDGPU_DC_ON; then
+    echo "Error   : --amdgpu-dc-off and --amdgpu-dc-on are mutually exclusive." >&2
+    exit 1
+fi
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$SCRIPT_DIR"
+# assert_xfce4.sh lives in <repo>/assert/, so the project root is the parent directory.
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+AMDGPU_SCRIPT="$PROJECT_DIR/assert/assert_amdgpu.sh"
 
 MYENV_KITTY_DESKTOP_NAME="myenv-kitty.desktop"
 MYENV_KITTY_DESKTOP_SOURCE="$PROJECT_DIR/xfce/$MYENV_KITTY_DESKTOP_NAME"
@@ -171,6 +211,7 @@ elif ! $RESTART_LIGHTDM_EXPLICIT; then
 fi
 
 NEEDS_REBOOT=false
+NEEDS_FULL_REBOOT=false
 
 $DEBUG && echo "Debug   : Starting: $script_name (CHECK=$CHECK)"
 
@@ -211,6 +252,10 @@ if [ ${#packages_to_install[@]} -gt 0 ]; then
 else
     echo "✓ All required packages are already installed"
 fi
+
+# AMD iGPU freeze mitigations (linux-firmware, xfwm4 compositor, amdgpu.dc kernel
+# parameter) are handled by assert/assert_amdgpu.sh, invoked near the end of this script
+# once the XFCE session is configured.
 
 #############################################
 # 2. Set LightDM as default display manager
@@ -423,57 +468,32 @@ else
 fi
 
 #############################################
-# 5c. Xfwm4 compositor compatibility for AMD iGPU freeze workaround
+# 5c. Suppress thunar-volman KVM device noise (opt-in)
 #############################################
-# On some AMD iGPU systems, xfwm4's default/auto vblank path can freeze desktop rendering.
-# Force XPresent-backed vblank and keep compositing enabled.
-echo "🔧 Xfwm4 compositor compatibility (AMD freeze workaround)..."
-if command -v xfconf-query >/dev/null 2>&1; then
-    if $CHECK; then
-        if cur_vblank=$(xfconf-query -c xfwm4 -p /general/vblank_mode -v 2>/dev/null); then
-            if [[ "$cur_vblank" == "xpresent" ]]; then
-                echo "✓ xfwm4 /general/vblank_mode is already xpresent"
-            else
-                echo "Check   : Would set xfwm4 /general/vblank_mode to xpresent (currently $cur_vblank)"
-            fi
-        else
-            echo "Check   : Would set xfwm4 /general/vblank_mode to xpresent when xfwm4 channel exists"
-        fi
-
-        if cur_comp=$(xfconf-query -c xfwm4 -p /general/use_compositing -v 2>/dev/null); then
-            if [[ "$cur_comp" == "true" ]]; then
-                echo "✓ xfwm4 /general/use_compositing is already true"
-            else
-                echo "Check   : Would set xfwm4 /general/use_compositing to true (currently $cur_comp)"
-            fi
-        else
-            echo "Check   : Would set xfwm4 /general/use_compositing to true when xfwm4 channel exists"
-        fi
+# KVM switches present HID/audio/video composite devices that thunar-volman cannot
+# handle, flooding ~/.xsession-errors with "Unsupported USB device type". Benign, but
+# noisy on every KVM input switch. --suppress-volman-noise disables volman automount.
+if $SUPPRESS_VOLMAN_NOISE; then
+    echo "🔧 Suppressing thunar-volman KVM device noise..."
+    if ! command -v xfconf-query >/dev/null 2>&1; then
+        echo "⚠️  xfconf-query not in PATH; skipped thunar-volman noise suppression"
+    elif $CHECK; then
+        echo "Check   : Would set thunar-volman /automount-media/enabled and /automount-drives/enabled to false"
     else
-        if xfconf-query -c xfwm4 -lv >/dev/null 2>&1; then
-            cur_vblank=$(xfconf-query -c xfwm4 -p /general/vblank_mode -v 2>/dev/null || true)
-            if [[ "$cur_vblank" != "xpresent" ]]; then
-                xfconf-query -c xfwm4 -p /general/vblank_mode -s xpresent -t string 2>/dev/null || \
-                    xfconf-query -c xfwm4 -p /general/vblank_mode -n -t string -s xpresent --create
-                echo "✓ Set xfwm4 /general/vblank_mode to xpresent"
-            else
-                echo "✓ xfwm4 /general/vblank_mode already xpresent"
+        vm_changed=false
+        for vm_key in /automount-media/enabled /automount-drives/enabled; do
+            cur=$(xfconf-query -c thunar-volman -p "$vm_key" -v 2>/dev/null || echo "")
+            if [[ "$cur" != "false" ]]; then
+                xfconf-query -c thunar-volman -p "$vm_key" -s false -t bool --create 2>/dev/null \
+                    && vm_changed=true
             fi
-
-            cur_comp=$(xfconf-query -c xfwm4 -p /general/use_compositing -v 2>/dev/null || true)
-            if [[ "$cur_comp" != "true" ]]; then
-                xfconf-query -c xfwm4 -p /general/use_compositing -s true -t bool 2>/dev/null || \
-                    xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s true --create
-                echo "✓ Set xfwm4 /general/use_compositing to true"
-            else
-                echo "✓ xfwm4 /general/use_compositing already true"
-            fi
+        done
+        if $vm_changed; then
+            echo "✓ thunar-volman automount disabled (KVM USB-device log spam suppressed)"
         else
-            echo "⚠️  xfconf channel xfwm4 not found; skipped (log in to Xfce once, then re-run assert_xfce4)"
+            echo "✓ thunar-volman automount already disabled"
         fi
     fi
-else
-    echo "⚠️  xfconf-query not in PATH; skipped xfwm4 compatibility settings"
 fi
 
 #############################################
@@ -576,7 +596,7 @@ fi
 #############################################
 echo "🔧 Installing refresh_display_kvm.sh to /usr/local/bin..."
 
-REFRESH_SCRIPT_SOURCE="$PROJECT_DIR/refresh_display_kvm.sh"
+REFRESH_SCRIPT_SOURCE="$PROJECT_DIR/diagnose/refresh_display_kvm.sh"
 REFRESH_SCRIPT_TARGET="/usr/local/bin/refresh_display_kvm.sh"
 
 if [ -f "$REFRESH_SCRIPT_SOURCE" ]; then
@@ -610,12 +630,65 @@ fi
 echo ""
 
 #############################################
+# 7b. Install diagnose/ + assert/ helpers to /usr/local/bin
+#############################################
+echo "🔧 Installing diagnose/ and assert/ helpers to /usr/local/bin..."
+declare -A HELPER_SRC=(
+    [recover_xfce_freeze.sh]="$PROJECT_DIR/diagnose/recover_xfce_freeze.sh"
+    [assert_amdgpu.sh]="$PROJECT_DIR/assert/assert_amdgpu.sh"
+)
+for helper in recover_xfce_freeze.sh assert_amdgpu.sh; do
+    helper_src="${HELPER_SRC[$helper]}"
+    helper_dst="/usr/local/bin/$helper"
+    if [ ! -f "$helper_src" ]; then
+        echo "⚠️  $helper not found at $helper_src, skipping"
+        continue
+    fi
+    if [ -f "$helper_dst" ] && cmp -s "$helper_src" "$helper_dst"; then
+        echo "✓ $helper already installed and up-to-date"
+    elif $CHECK; then
+        echo "Check   : Would sudo install $helper_src to $helper_dst (chmod +x)"
+    else
+        echo "→ Installing $helper to /usr/local/bin"
+        sudo cp "$helper_src" "$helper_dst"
+        sudo chmod +x "$helper_dst"
+        echo "✓ $helper installed to /usr/local/bin"
+    fi
+done
+
+echo ""
+
+#############################################
+# 7c. AMD iGPU freeze mitigation (delegated to assert/assert_amdgpu.sh)
+#############################################
+echo "🔧 AMD iGPU freeze mitigation (assert/assert_amdgpu.sh)..."
+if [ ! -f "$AMDGPU_SCRIPT" ]; then
+    echo "⚠️  $AMDGPU_SCRIPT not found; skipping AMD GPU mitigation"
+else
+    amdgpu_args=()
+    $DEBUG && amdgpu_args+=(--Debug)
+    $CHECK && amdgpu_args+=(--Check)
+    $SKIP_FIRMWARE_UPDATE && amdgpu_args+=(--skip-firmware-update)
+    $AMDGPU_DC_OFF && amdgpu_args+=(--amdgpu-dc-off)
+    $AMDGPU_DC_ON && amdgpu_args+=(--amdgpu-dc-on)
+    amdgpu_rc=0
+    bash "$AMDGPU_SCRIPT" "${amdgpu_args[@]}" || amdgpu_rc=$?
+    if [[ $amdgpu_rc -eq 10 ]]; then
+        NEEDS_FULL_REBOOT=true
+    elif [[ $amdgpu_rc -ne 0 ]]; then
+        echo "⚠️  assert_amdgpu.sh exited $amdgpu_rc (see output above)"
+    fi
+fi
+
+echo ""
+
+#############################################
 # 8. Run wake_on_kvm.sh for KVM switch support
 #############################################
 echo "🔧 Setting up KVM switch persistence..."
 echo ""
 
-WAKE_SCRIPT="$PROJECT_DIR/wake_on_kvm.sh"
+WAKE_SCRIPT="$PROJECT_DIR/diagnose/wake_on_kvm.sh"
 
 if [ -f "$WAKE_SCRIPT" ]; then
     if $CHECK; then
@@ -659,9 +732,12 @@ echo ""
 if $CHECK; then
     echo "✅ assert_xfce4 check complete (no changes applied)"
     echo ""
-    echo "Summary (dry-run): would ensure XFCE4/LightDM packages, session defaults, repo symlinks, Kitty config, Kitty panel launcher, KVM helpers."
+    echo "Summary (dry-run): would ensure XFCE4/LightDM packages, session defaults, repo symlinks, Kitty config, Kitty panel launcher, AMD GPU freeze mitigations (via assert/assert_amdgpu.sh), diagnose/ helpers, KVM persistence."
     if [[ "$NEEDS_REBOOT" == "true" ]]; then
         echo "Check   : After a live run, LightDM restart would apply the new display manager and session."
+    fi
+    if [[ "$NEEDS_FULL_REBOOT" == "true" ]]; then
+        echo "Check   : ⚠️  A live run would change firmware and/or kernel parameters — a full REBOOT (not just LightDM) would be required."
     fi
     echo "Check   : Live run would offer [R]estart / [S]kip LightDM on a TTY (unless --no-restart-lightdm)."
     echo "Result  : assert_xfce4 check complete"
@@ -684,11 +760,29 @@ echo "  • ~/.config/autostart → $PROJECT_DIR/autostart"
 echo "  • ~/.config/kitty/kitty.conf → $PROJECT_DIR/kitty/kitty.conf (scrollback 50k lines)"
 echo "  • Xfce: Kitty launcher on primary panel (myenv-kitty.desktop, after expand separator)"
 echo "  • xfconf displays/Notify → 0 (no Display dialog on monitor reconnect)"
-echo "  • xfwm4 compositor: vblank_mode=xpresent, use_compositing=true (AMD freeze workaround)"
+echo "  • AMD iGPU freeze mitigations applied via assert/assert_amdgpu.sh (firmware, xfwm4 xpresent, optional amdgpu.dc)"
+$SUPPRESS_VOLMAN_NOISE && echo "  • thunar-volman automount disabled (KVM USB log-spam suppressed)"
+echo "  • recover_xfce_freeze.sh + assert_amdgpu.sh installed to /usr/local/bin"
 echo "  • ~/.xscreensaver → $PROJECT_DIR/.xscreensaver"
 echo "  • refresh_display_kvm.sh installed to /usr/local/bin"
 echo "  • KVM switch persistence configured (wake_on_kvm.sh)"
 echo ""
+
+if [[ "$NEEDS_FULL_REBOOT" == "true" ]]; then
+    # A full reboot supersedes (and applies) any pending LightDM/session change.
+    RESTART_LIGHTDM=false
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  ⚠️  FULL REBOOT REQUIRED"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  GPU firmware and/or kernel parameters changed. A LightDM restart is NOT"
+    echo "  enough — reboot to load the new firmware/kernel command line:"
+    echo "      sudo reboot"
+    echo "  After reboot, verify the freeze bug is gone (single command):"
+    echo "      assert_amdgpu.sh --Check     # or: /usr/local/bin/assert_amdgpu.sh --Check"
+    echo ""
+    echo "Result  : assert_xfce4 finished (reboot required)"
+    exit 0
+fi
 
 if $RESTART_LIGHTDM && [ "$INTERACTIVE" = "true" ]; then
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

@@ -5,16 +5,23 @@
 # Run on the Ubuntu machine (interactive session). No sudo required for normal
 # PipeWire/PulseAudio user commands.
 #
-# Usage:
-#   ./diagnose_hdmi_audio.sh              # print sinks/cards/default
-#   ./diagnose_hdmi_audio.sh --set-hdmi   # set first sink whose name contains hdmi (best-effort)
+# WHAT IT DOES / WHEN TO RUN
+#   Lists PipeWire/PulseAudio sinks and cards; optional --set-hdmi picks the first HDMI
+#   sink as default. Use after a KVM switch when browser/system audio is on the wrong
+#   device. Complements display scripts in diagnose/ (see docs/ubuntu-hdmi-audio-kvm.md).
+#
+# USAGE: diagnose_hdmi_audio.sh [--set-hdmi] [--help|-h]
 #
 set -euo pipefail
 
 SET_HDMI=false
-if [[ "${1:-}" == "--set-hdmi" ]]; then
-  SET_HDMI=true
-fi
+case "${1:-}" in
+  -h|--help)
+    sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^#\s\{0,1\}//'
+    exit 0
+    ;;
+  --set-hdmi) SET_HDMI=true ;;
+esac
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  HDMI audio diagnosis (PipeWire / PulseAudio)"

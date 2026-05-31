@@ -10,9 +10,23 @@
 #   • Idempotent: safe to run repeatedly
 #   • Logs all actions to /var/log/wake_on_kvm.log
 #
+# WHAT IT DOES / WHEN TO RUN
+#   System-level KVM persistence: blocks auto-sleep, enables USB wake, optional Xorg monitor
+#   config, installs the minimal refresh_display.sh helper. Invoked by assert_xfce4.sh
+#   during setup (requires sudo). Idempotent.
+#
+# USAGE: wake_on_kvm.sh [--help|-h]
+#
 # Requires: sudo privileges
 
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^#\s\{0,1\}//'
+    exit 0
+fi
+
 LOGFILE="/var/log/wake_on_kvm.log"
 mkdir -p "$(dirname "$LOGFILE")"
 exec > >(tee -a "$LOGFILE") 2>&1
@@ -159,13 +173,18 @@ done
 # 6. Optional: ensure xrandr auto-refresh command exists
 #############################################
 XRANDR_SCRIPT="/usr/local/bin/refresh_display.sh"
-if [ ! -f "$XRANDR_SCRIPT" ]; then
-    echo "→ Creating helper to refresh HDMI display: $XRANDR_SCRIPT"
-    sudo tee "$XRANDR_SCRIPT" > /dev/null <<EOF
-#!/bin/bash
-# Reinitialize display after KVM switch
-xrandr --auto
-EOF
+REFRESH_SOURCE="$SCRIPT_DIR/refresh_display.sh"
+if [ -f "$XRANDR_SCRIPT" ] && [ -f "$REFRESH_SOURCE" ] && cmp -s "$REFRESH_SOURCE" "$XRANDR_SCRIPT"; then
+    echo "✓ $XRANDR_SCRIPT already installed and up-to-date"
+elif [ ! -f "$REFRESH_SOURCE" ]; then
+    echo "⚠️  $REFRESH_SOURCE not found; skipping refresh_display.sh install"
+elif [ -f "$XRANDR_SCRIPT" ] && ! cmp -s "$REFRESH_SOURCE" "$XRANDR_SCRIPT"; then
+    echo "→ Updating $XRANDR_SCRIPT from repo"
+    sudo cp "$REFRESH_SOURCE" "$XRANDR_SCRIPT"
+    sudo chmod +x "$XRANDR_SCRIPT"
+else
+    echo "→ Installing refresh_display.sh to $XRANDR_SCRIPT"
+    sudo cp "$REFRESH_SOURCE" "$XRANDR_SCRIPT"
     sudo chmod +x "$XRANDR_SCRIPT"
 fi
 

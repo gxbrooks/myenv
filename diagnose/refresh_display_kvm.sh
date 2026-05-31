@@ -5,12 +5,16 @@
 # This script can be run via SSH even when no user is logged in.
 # It refreshes the display at the X server level (LightDM/Xorg).
 #
-# Usage:
-#   ssh Lab1 "sudo /path/to/refresh_display_kvm.sh [--restart-lightdm]"
-#   Or run locally: sudo ./refresh_display_kvm.sh [--restart-lightdm]
+# WHAT IT DOES / WHEN TO RUN
+#   Full display recovery after a KVM switch or headless boot: xrandr, DRM hotplug, DPMS,
+#   optional LightDM restart. Run via SSH with sudo when the monitor is blank but the host
+#   is up. For a quick xrandr --auto at login, use diagnose/refresh_display.sh instead.
 #
-# Options:
-#   --restart-lightdm    Restart LightDM service (more aggressive fix)
+# USAGE: refresh_display_kvm.sh [--restart-lightdm] [--help|-h]
+#
+# FLAGS
+#   --restart-lightdm   Restart LightDM (forces Xorg to re-detect displays).
+#   --help, -h          Show this help and exit.
 #
 # Requires: sudo privileges
 
@@ -18,9 +22,21 @@ set -uo pipefail
 # Don't exit on error (-e) so we can handle timeouts gracefully
 
 RESTART_LIGHTDM=false
-if [[ "${1:-}" == "--restart-lightdm" ]]; then
-    RESTART_LIGHTDM=true
-fi
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --restart-lightdm) RESTART_LIGHTDM=true ;;
+        -h|--help)
+            sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^#\s\{0,1\}//'
+            exit 0
+            ;;
+        *)
+            echo "Error   : Unrecognized argument $1" >&2
+            echo "Usage   : $(basename "$0") [--restart-lightdm] [--help|-h]" >&2
+            exit 1
+            ;;
+    esac
+    shift
+done
 
 # Find the active X display (usually :0)
 X_DISPLAY=":0"

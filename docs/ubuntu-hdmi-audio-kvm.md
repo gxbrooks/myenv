@@ -123,7 +123,7 @@ If HDMI never appears in `wpctl` / `pactl`, test **Ubuntu → monitor direct** (
 From the myenv repo root on the Ubuntu machine:
 
 ```bash
-./diagnose_hdmi_audio.sh
+./diagnose/diagnose_hdmi_audio.sh
 ```
 
-See also: `refresh_display_kvm.sh`, `wake_on_kvm.sh` (display/USB; complementary to audio).
+See also: `diagnose/refresh_display_kvm.sh`, `diagnose/wake_on_kvm.sh` (display/USB; complementary to audio).

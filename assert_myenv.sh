@@ -39,6 +39,11 @@
 #       Passed to assert_xfce4.sh: skip LightDM restart without prompting. On an interactive TTY,
 #       assert_xfce4 otherwise asks [R]estart or [S]kip; these flags bypass that and skip restart.
 #       (Default is already no restart when NONINTERACTIVE=1 or there is no TTY.)
+#
+#   --skip-firmware-update | --amdgpu-dc-off | --amdgpu-dc-on | --suppress-volman-noise
+#       Passed to assert_xfce4.sh (AMD iGPU freeze mitigations). See assert_xfce4.sh header:
+#       linux-firmware is kept current by default; --amdgpu-dc-off is an opt-in last-resort
+#       kernel workaround (disables AMD Display Core; reboot required; see warnings).
 
 DEBUG=false
 CHECK=false
@@ -54,7 +59,7 @@ script_dir="$(cd "$(dirname "$script_path")" && pwd)"
 packages_script="$script_dir/assert_packages.sh"
 bashrc_script="$script_dir/assert_bashrc.sh"
 git_assert_script="$script_dir/assert_git.sh"
-xfce_assert_script="$script_dir/assert_xfce4.sh"
+xfce_assert_script="$script_dir/assert/assert_xfce4.sh"
 dotfiles_assert_script="$script_dir/assert/assert_dotfiles.sh"
 extensions_assert_script="$script_dir/assert/assert_extensions.sh"
 
@@ -104,9 +109,12 @@ while [[ $# -gt 0 ]]; do
         --no-restart-lightdm|--skip-lightdm-restart)
             XFCE_EXTRA_ARGS+=(--no-restart-lightdm)
             ;;
+        --skip-firmware-update|--amdgpu-dc-off|--amdgpu-dc-on|--suppress-volman-noise)
+            XFCE_EXTRA_ARGS+=("$1")
+            ;;
         *)
             echo "Error   : Unrecognized argument $1 in $script_name."
-            echo "Usage   : $script_name [--Debug|-d] [--Check|-c] [--name|-n <git_name>] [--email|-e <git_email>] [--Passphrase|-p|-N <passphrase>] [--User|-u <username>] [--restart-lightdm|-r] [--no-restart-lightdm] [--skip-lightdm-restart]"
+            echo "Usage   : $script_name [--Debug|-d] [--Check|-c] [--name|-n <git_name>] [--email|-e <git_email>] [--Passphrase|-p|-N <passphrase>] [--User|-u <username>] [--restart-lightdm|-r] [--no-restart-lightdm] [--skip-lightdm-restart] [--skip-firmware-update] [--amdgpu-dc-off] [--amdgpu-dc-on] [--suppress-volman-noise]"
             exit 1
             ;;
     esac

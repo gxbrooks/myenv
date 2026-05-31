@@ -138,7 +138,7 @@ required_assert_files_present() {
         "$INSTALL_DIR/assert_packages.sh"
         "$INSTALL_DIR/assert_git.sh"
         "$INSTALL_DIR/assert_bashrc.sh"
-        "$INSTALL_DIR/assert_xfce4.sh"
+        "$INSTALL_DIR/assert/assert_xfce4.sh"
         "$INSTALL_DIR/assert/assert_dotfiles.sh"
         "$INSTALL_DIR/assert/assert_extensions.sh"
     )
@@ -267,7 +267,7 @@ else
     run_step "assert_extensions" bash "$INSTALL_DIR/assert/assert_extensions.sh" --merge "${common_args[@]}"
 fi
 
-run_step "assert_xfce4" bash "$INSTALL_DIR/assert_xfce4.sh" "${common_args[@]}" "${XFCE_EXTRA_ARGS[@]}"
+run_step "assert_xfce4" bash "$INSTALL_DIR/assert/assert_xfce4.sh" "${common_args[@]}" "${XFCE_EXTRA_ARGS[@]}"
 
 if $CHECK; then
     echo "Result  : install_myenv check complete"
