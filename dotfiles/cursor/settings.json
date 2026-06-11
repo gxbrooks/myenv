@@ -16,5 +16,6 @@
     "**/.bloop": true,
     "**/.metals": true
   },
-  "window.confirmSaveUntitledWorkspace": false
+  "window.confirmSaveUntitledWorkspace": false,
+  "markdown.mermaid.enabled": true
 }
