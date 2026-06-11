@@ -141,6 +141,7 @@ required_assert_files_present() {
         "$INSTALL_DIR/assert/assert_xfce4.sh"
         "$INSTALL_DIR/assert/assert_dotfiles.sh"
         "$INSTALL_DIR/assert/assert_extensions.sh"
+        "$INSTALL_DIR/assert/assert_sublime.sh"
     )
     local missing=0
     local path
@@ -266,6 +267,8 @@ if $SKIP_EXTENSIONS; then
 else
     run_step "assert_extensions" bash "$INSTALL_DIR/assert/assert_extensions.sh" --merge "${common_args[@]}"
 fi
+
+run_step "assert_sublime" bash "$INSTALL_DIR/assert/assert_sublime.sh" "${common_args[@]}"
 
 run_step "assert_xfce4" bash "$INSTALL_DIR/assert/assert_xfce4.sh" "${common_args[@]}" "${XFCE_EXTRA_ARGS[@]}"
 

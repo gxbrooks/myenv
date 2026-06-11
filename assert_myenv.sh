@@ -3,7 +3,8 @@
 # Assert MyEnv Personal Environment
 #
 # Orchestrates: assert_packages.sh (includes kitty + kitty-terminfo for remote TERM=xterm-kitty),
-# assert_git.sh, assert_bashrc.sh, assert_dotfiles.sh, assert_extensions.sh, assert_xfce4.sh
+# assert_git.sh, assert_bashrc.sh, assert_dotfiles.sh, assert_extensions.sh, assert_sublime.sh,
+# assert_xfce4.sh
 # Idempotent and safe to run multiple times.
 #
 # Parameters (CLI flags and values consumed here):
@@ -62,6 +63,7 @@ git_assert_script="$script_dir/assert_git.sh"
 xfce_assert_script="$script_dir/assert/assert_xfce4.sh"
 dotfiles_assert_script="$script_dir/assert/assert_dotfiles.sh"
 extensions_assert_script="$script_dir/assert/assert_extensions.sh"
+sublime_assert_script="$script_dir/assert/assert_sublime.sh"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -192,6 +194,11 @@ fi
 # --- Cursor extension list enforcement from repo dotfiles/cursor/extensions.txt ---
 if ! run_step "assert_extensions" "$extensions_assert_script" "${common_args[@]}"; then
     echo "Warning : assert_extensions step failed"
+fi
+
+# --- Sublime Text Package Control + Pretty JSON from repo dotfiles/sublime ---
+if ! run_step "assert_sublime" "$sublime_assert_script" "${common_args[@]}"; then
+    echo "Warning : assert_sublime step failed"
 fi
 
 # --- XFCE4 desktop, LightDM, KVM helpers (Ubuntu UI parity across lab hosts) ---
