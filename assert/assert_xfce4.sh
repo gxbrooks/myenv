@@ -635,9 +635,10 @@ echo ""
 echo "🔧 Installing diagnose/ and assert/ helpers to /usr/local/bin..."
 declare -A HELPER_SRC=(
     [recover_xfce_freeze.sh]="$PROJECT_DIR/diagnose/recover_xfce_freeze.sh"
+    [escalate_xfce_freeze.sh]="$PROJECT_DIR/diagnose/escalate_xfce_freeze.sh"
     [assert_amdgpu.sh]="$PROJECT_DIR/assert/assert_amdgpu.sh"
 )
-for helper in recover_xfce_freeze.sh assert_amdgpu.sh; do
+for helper in recover_xfce_freeze.sh escalate_xfce_freeze.sh assert_amdgpu.sh; do
     helper_src="${HELPER_SRC[$helper]}"
     helper_dst="/usr/local/bin/$helper"
     if [ ! -f "$helper_src" ]; then
@@ -762,7 +763,7 @@ echo "  • Xfce: Kitty launcher on primary panel (myenv-kitty.desktop, after ex
 echo "  • xfconf displays/Notify → 0 (no Display dialog on monitor reconnect)"
 echo "  • AMD iGPU freeze mitigations applied via assert/assert_amdgpu.sh (firmware, xfwm4 xpresent, optional amdgpu.dc)"
 $SUPPRESS_VOLMAN_NOISE && echo "  • thunar-volman automount disabled (KVM USB log-spam suppressed)"
-echo "  • recover_xfce_freeze.sh + assert_amdgpu.sh installed to /usr/local/bin"
+echo "  • recover_xfce_freeze.sh + escalate_xfce_freeze.sh + assert_amdgpu.sh installed to /usr/local/bin"
 echo "  • ~/.xscreensaver → $PROJECT_DIR/.xscreensaver"
 echo "  • refresh_display_kvm.sh installed to /usr/local/bin"
 echo "  • KVM switch persistence configured (wake_on_kvm.sh)"

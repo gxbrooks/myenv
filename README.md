@@ -267,7 +267,9 @@ sudo reboot
 | Script | When to use | Installed to `/usr/local/bin`? |
 |--------|-------------|--------------------------------|
 | `assert/assert_amdgpu.sh` | **Setup + verify** AMD iGPU freeze mitigations (firmware, compositor, optional grub). `--Check` = health report. | Yes (by `assert_xfce4`) |
-| `diagnose/recover_xfce_freeze.sh` | **Live freeze** — mouse dead at KVM, SSH works; disable compositor + restart xfwm4. | Yes |
+| `diagnose/recover_xfce_freeze.sh` | **Live freeze** — mouse dead at KVM, SSH works; disable compositor + restart xfwm4 (`--force` kills stuck xfwm4/GL). | Yes |
+| `diagnose/escalate_xfce_freeze.sh` | **Escalation** — force recovery + X probe; restarts LightDM if sudo allows (no full reboot). | Yes |
+| `diagnose/run_lab3_ui_recovery.sh` | **Lab1 driver** — SCP scripts to a lab host and run escalation (run from repo, not installed). | No |
 | `diagnose/refresh_display_kvm.sh` | **Blank display** after KVM / headless boot; full xrandr/DRM/LightDM recovery (sudo). | Yes |
 | `diagnose/refresh_display.sh` | **Login / session** — minimal `xrandr --auto`; used by `.xprofile` and autostart. | Yes (via `wake_on_kvm`) |
 | `diagnose/wake_on_kvm.sh` | **Install-time** KVM persistence (sleep, USB wake, Xorg). Not for ad-hoc repair. | No (run from repo) |
