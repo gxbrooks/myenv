@@ -135,7 +135,7 @@ normalize_repo_url() {
 
 required_assert_files_present() {
     local required=(
-        "$INSTALL_DIR/assert_packages.sh"
+        "$INSTALL_DIR/assert/assert_packages.sh"
         "$INSTALL_DIR/assert_git.sh"
         "$INSTALL_DIR/assert_bashrc.sh"
         "$INSTALL_DIR/assert/assert_xfce4.sh"
@@ -257,7 +257,7 @@ git_args=("${common_args[@]}")
 
 echo "Info    : Running myenv asserts from $INSTALL_DIR"
 
-run_step "assert_packages" bash "$INSTALL_DIR/assert_packages.sh" "${common_args[@]}"
+run_step "assert_packages" bash "$INSTALL_DIR/assert/assert_packages.sh" "${common_args[@]}"
 run_step "assert_git" bash "$INSTALL_DIR/assert_git.sh" "${git_args[@]}"
 run_step "assert_bashrc" bash "$INSTALL_DIR/assert_bashrc.sh" "${common_args[@]}"
 run_step "assert_dotfiles" bash "$INSTALL_DIR/assert/assert_dotfiles.sh" --merge "${common_args[@]}"

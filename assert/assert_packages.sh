@@ -249,7 +249,7 @@ ensure_kitty_default_terminal() {
 }
 
 EXTERNAL_REPO_PACKAGES=(sublime-text google-chrome-stable)
-STANDARD_PACKAGES=(kitty kitty-terminfo gnome-keyring libsecret-1-0 seahorse gh openssh-client keychain okular xfce4-screenshooter)
+STANDARD_PACKAGES=(kitty kitty-terminfo gnome-keyring libsecret-1-0 seahorse gh openssh-client keychain okular xfce4-screenshooter libreoffice)
 NETWORK_PACKAGES=(nmap speedtest-cli)
 ALL_APT_PACKAGES=("${EXTERNAL_REPO_PACKAGES[@]}" "${STANDARD_PACKAGES[@]}" "${NETWORK_PACKAGES[@]}")
 

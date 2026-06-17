@@ -69,7 +69,8 @@ myenv/
 ├── .xscreensaver                      # Screensaver config (glmatrix)
 ├── tmp/                               # Ephemeral notes & scratch (gitignored; not in git)
 ├── assert_myenv.sh                    # Orchestrator
-└── assert_packages.sh, assert_git.sh, assert_bashrc.sh, install_myenv.sh
+├── assert/                            # assert_packages.sh, assert_xfce4.sh, …
+└── assert_git.sh, assert_bashrc.sh, install_myenv.sh
 ```
 
 Config lives under `xfce/` and `kitty/`; scripts live under `assert/` (setup) and `diagnose/` (repair).
