@@ -1,5 +1,7 @@
 anysphere.cursorpyright
 anysphere.remote-containers
+asciidoctor.asciidoctor-vscode
+schletz.asciidoc-productivity
 bierner.markdown-mermaid
 docker.docker
 mechatroner.rainbow-csv
