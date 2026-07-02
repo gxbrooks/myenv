@@ -144,22 +144,29 @@ Use:
 - `bash assert/assert_dotfiles.sh` to assert symlinks (or import first-time files)
 - `bash assert/assert_extensions.sh` to assert Cursor extensions from `dotfiles/cursor/extensions.txt`
 
-**Run `assert_myenv.sh` from an external terminal** (kitty, ssh), not from the Cursor Agent terminal:
+**Run `assert_myenv.sh` from an external terminal** (kitty, ssh) when steps need `sudo` (apt, gems). Extension install uses the **headless** Cursor CLI and does not open a GUI window per extension.
 
-| Step | Why external terminal |
-|------|------------------------|
-| `sudo apt install` / `sudo gem install` | Agent sandbox has no TTY for your sudo password |
-| `cursor --install-extension` | Invoking the Cursor CLI from inside a Cursor Agent session can spawn new Cursor windows repeatedly |
+| Step | Notes |
+|------|--------|
+| `sudo apt install` / `sudo gem install` | Needs a TTY for your sudo password (Agent sandbox often blocks this) |
+| `assert_extensions.sh` | Uses `/opt/cursor/bin/cursor` (cli.js) via `/usr/local/bin/cursor`; one list call + one batched install |
 
-The Agent sets `CURSOR_AGENT` in the shell; `assert_extensions.sh` and `assert_myenv.sh` skip extension install when that variable is present. For a full run including extensions and AsciiDoctor gems:
+`assert_packages.sh` ensures `/usr/local/bin/cursor` execs the headless CLI script, **not** the Electron binary. The old wrapper (`exec /opt/cursor/.../cursor`) caused a new Cursor window on every `--list-extensions` / `--install-extension` call.
 
-```bash
-kitty -e bash -lc '~/repos/myenv/assert_myenv.sh'
-```
-
-Or from Cursor Agent (apt/gems only, no extension cascade): the orchestrator already skips extensions when `CURSOR_AGENT` is set.
+The Agent sets `CURSOR_AGENT` in the shell; use kitty for full assert when sudo is required.
 
 See [Cursor terminal / sandbox docs](https://cursor.com/docs/agent/tools/terminal) if the Agent reports sandbox restrictions.
+
+### AsciiDoc and PlantUML (documentation builds)
+
+`assert_packages.sh` installs `asciidoctor`, `graphviz`, and `plantuml`; `assert_gems.sh` installs `asciidoctor-pdf` and `asciidoctor-diagram`. Together they render `[plantuml]` blocks in `.adoc` files to HTML and PDF (no Mermaid CLI or Kroki required).
+
+After `assert_myenv.sh`, build a document from its directory:
+
+```bash
+asciidoctor -r asciidoctor-diagram -a toc=left -a sectnums doc.adoc
+asciidoctor-pdf -r asciidoctor-diagram doc.adoc
+```
 
 ## How It Works
 

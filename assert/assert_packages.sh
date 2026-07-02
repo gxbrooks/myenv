@@ -55,6 +55,62 @@ install_package() {
     return 1
 }
 
+# Check each apt package; install only when missing. Verbose groups print every item.
+assert_apt_packages() {
+    local verbose=$1
+    shift
+    local pkgs=("$@")
+    local pkg
+
+    for pkg in "${pkgs[@]}"; do
+        if is_package_installed "$pkg"; then
+            ALREADY_INSTALLED_COUNT=$((ALREADY_INSTALLED_COUNT + 1))
+            if $verbose || $DEBUG; then
+                echo "✓ $pkg is already installed"
+            else
+                $DEBUG && echo "Debug   : Package '$pkg' is already installed"
+            fi
+        else
+            if $verbose; then
+                echo "○ $pkg is not installed"
+            fi
+            if install_package "$pkg"; then
+                INSTALLED_COUNT=$((INSTALLED_COUNT + 1))
+                if $verbose && ! $CHECK; then
+                    echo "✓ $pkg installed"
+                fi
+            else
+                if ! $CHECK; then
+                    FAILED_COUNT=$((FAILED_COUNT + 1))
+                    FAILED_STEPS+=("apt:$pkg")
+                    echo "Warning : Installation failed for package '$pkg'"
+                fi
+            fi
+        fi
+    done
+}
+
+verify_docs_toolchain() {
+    local cmd version
+
+    echo ""
+    echo "Info    : Verifying documentation toolchain commands..."
+    for cmd in asciidoctor plantuml dot; do
+        if command -v "$cmd" >/dev/null 2>&1; then
+            case "$cmd" in
+                asciidoctor) version="$(asciidoctor --version 2>&1 | head -1)" ;;
+                plantuml) version="$(plantuml -version 2>&1 | head -1)" ;;
+                dot) version="$(dot -V 2>&1 | head -1)" ;;
+            esac
+            echo "✓ $cmd — $version"
+        else
+            echo "Warning : $cmd not found in PATH"
+            return 1
+        fi
+    done
+    return 0
+}
+
 setup_external_repos() {
     if [[ ! -f /etc/apt/sources.list.d/sublime-text.list ]]; then
         if $CHECK; then
@@ -94,9 +150,43 @@ setup_external_repos() {
     fi
 }
 
+# /usr/local/bin/cursor must invoke bin/cursor (headless cli.js), not the Electron binary.
+# Exec'ing the binary directly boots a GUI window for every --list-extensions / --install-extension call.
+ensure_cursor_cli_wrapper() {
+    local install_dir="/opt/cursor"
+    local cli_script="$install_dir/bin/cursor"
+    local wrapper="/usr/local/bin/cursor"
+
+    if [[ ! -x "$cli_script" ]]; then
+        $DEBUG && echo "Debug   : Cursor CLI script not found at $cli_script — skipping wrapper update"
+        return 0
+    fi
+
+    if $CHECK; then
+        if [[ ! -f "$wrapper" ]] || ! grep -qF "$cli_script" "$wrapper" 2>/dev/null; then
+            echo "Check   : Would update $wrapper to exec headless Cursor CLI ($cli_script)"
+        fi
+        return 0
+    fi
+
+    if [[ -f "$wrapper" ]] && grep -qF "$cli_script" "$wrapper" 2>/dev/null; then
+        $DEBUG && echo "Debug   : $wrapper already points to headless Cursor CLI"
+        return 0
+    fi
+
+    echo "Info    : Updating $wrapper to use headless Cursor CLI ($cli_script)"
+    sudo tee "$wrapper" > /dev/null <<WRAPPER
+#!/bin/bash
+exec "$cli_script" "\$@"
+WRAPPER
+    sudo chmod +x "$wrapper"
+    echo "Result  : Cursor CLI wrapper updated (headless — no window per extension operation)"
+}
+
 install_cursor() {
     local install_dir="/opt/cursor"
     local binary_path="$install_dir/usr/share/cursor/cursor"
+    local cli_script="$install_dir/bin/cursor"
     local sandbox_path="$install_dir/usr/share/cursor/chrome-sandbox"
     local desktop_file="/usr/share/applications/cursor.desktop"
     local wrapper="/usr/local/bin/cursor"
@@ -104,6 +194,7 @@ install_cursor() {
 
     if [[ -f "$binary_path" ]]; then
         $DEBUG && echo "Debug   : Cursor already installed at $binary_path"
+        ensure_cursor_cli_wrapper
         return 0
     fi
 
@@ -178,10 +269,12 @@ install_cursor() {
     if [[ ! -f "$wrapper" ]]; then
         sudo tee "$wrapper" > /dev/null <<WRAPPER
 #!/bin/bash
-exec "$binary_path" "\$@"
+exec "$cli_script" "\$@"
 WRAPPER
         sudo chmod +x "$wrapper"
     fi
+
+    ensure_cursor_cli_wrapper
 
     if [[ ! -f "$desktop_file" ]]; then
         local icon_arg="$icon_path"
@@ -250,7 +343,7 @@ ensure_kitty_default_terminal() {
 
 EXTERNAL_REPO_PACKAGES=(sublime-text google-chrome-stable)
 STANDARD_PACKAGES=(kitty kitty-terminfo gnome-keyring libsecret-1-0 seahorse gh openssh-client keychain okular xfce4-screenshooter libreoffice)
-DOCS_PACKAGES=(asciidoctor ruby-rubygems)
+DOCS_PACKAGES=(asciidoctor ruby-rubygems graphviz plantuml)
 NETWORK_PACKAGES=(nmap speedtest-cli)
 ALL_APT_PACKAGES=("${EXTERNAL_REPO_PACKAGES[@]}" "${STANDARD_PACKAGES[@]}" "${DOCS_PACKAGES[@]}" "${NETWORK_PACKAGES[@]}")
 
@@ -263,22 +356,13 @@ FAILED_STEPS=()
 
 setup_external_repos
 
-for pkg in "${ALL_APT_PACKAGES[@]}"; do
-    if is_package_installed "$pkg"; then
-        ALREADY_INSTALLED_COUNT=$((ALREADY_INSTALLED_COUNT + 1))
-        $DEBUG && echo "Debug   : Package '$pkg' is already installed"
-    else
-        if install_package "$pkg"; then
-            INSTALLED_COUNT=$((INSTALLED_COUNT + 1))
-        else
-            if ! $CHECK; then
-                FAILED_COUNT=$((FAILED_COUNT + 1))
-                FAILED_STEPS+=("apt:$pkg")
-                echo "Warning : Installation failed for package '$pkg'"
-            fi
-        fi
-    fi
-done
+echo ""
+echo "📄 AsciiDoc / documentation toolchain (apt)..."
+assert_apt_packages true "${DOCS_PACKAGES[@]}"
+
+echo ""
+echo "Info    : Checking remaining apt packages..."
+assert_apt_packages false "${EXTERNAL_REPO_PACKAGES[@]}" "${STANDARD_PACKAGES[@]}" "${NETWORK_PACKAGES[@]}"
 
 if ! install_cursor; then
     if ! $CHECK; then
@@ -286,6 +370,8 @@ if ! install_cursor; then
         FAILED_STEPS+=("tool:cursor")
         echo "Warning : Cursor installation step failed"
     fi
+else
+    ensure_cursor_cli_wrapper
 fi
 
 ensure_kitty_default_terminal || true
@@ -308,6 +394,7 @@ else
 fi
 
 if ! $CHECK; then
+    verify_docs_toolchain || true
     echo ""
     echo "Info    : Verifying package installations..."
     for pkg in "${ALL_APT_PACKAGES[@]}"; do

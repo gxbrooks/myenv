@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Assert MyEnv — Ruby gems for documentation tooling (AsciiDoctor PDF/diagram).
+# Assert MyEnv — Ruby gems for documentation tooling (AsciiDoctor PDF/diagram/PlantUML).
 # Idempotent. Invoked by assert_myenv.sh or run standalone.
 #
 # Usage: assert_gems.sh [--Debug|-d] [--Check|-c]
@@ -28,15 +28,21 @@ $DEBUG && echo "Debug   : Starting: $script_name"
 $DEBUG && echo "Debug   : script_dir = $script_dir"
 $DEBUG && echo "Debug   : CHECK = $CHECK"
 
+GEM_PACKAGES=(asciidoctor-pdf asciidoctor-diagram)
+
 is_gem_installed() {
     local gem_name=$1
     gem list -i "$gem_name" >/dev/null 2>&1
 }
 
+gem_version_line() {
+    local gem_name=$1
+    gem list "$gem_name" 2>/dev/null | grep -E "^${gem_name} " | head -1
+}
+
 install_gem() {
     local gem_name=$1
     if is_gem_installed "$gem_name"; then
-        $DEBUG && echo "Debug   : Gem '$gem_name' is already installed"
         return 0
     fi
 
@@ -59,7 +65,22 @@ install_gem() {
     return 1
 }
 
-GEM_PACKAGES=(asciidoctor-pdf asciidoctor-diagram)
+verify_gem_commands() {
+    local cmd version
+
+    echo ""
+    echo "Info    : Verifying documentation gem commands..."
+    for cmd in asciidoctor-pdf; do
+        if command -v "$cmd" >/dev/null 2>&1; then
+            version="$("$cmd" --version 2>&1 | head -1)"
+            echo "✓ $cmd — $version"
+        else
+            echo "Warning : $cmd not found in PATH"
+            return 1
+        fi
+    done
+    return 0
+}
 
 $DEBUG && echo "Debug   : Ruby gems to check/install: ${GEM_PACKAGES[*]}"
 
@@ -78,13 +99,20 @@ if ! command -v gem >/dev/null 2>&1; then
     exit 1
 fi
 
+echo ""
+echo "📄 AsciiDoc / documentation toolchain (Ruby gems)..."
+
 for gem_name in "${GEM_PACKAGES[@]}"; do
     if is_gem_installed "$gem_name"; then
         ALREADY_INSTALLED_COUNT=$((ALREADY_INSTALLED_COUNT + 1))
-        $DEBUG && echo "Debug   : Gem '$gem_name' is already installed"
+        echo "✓ gem $gem_name is already installed ($(gem_version_line "$gem_name"))"
     else
+        echo "○ gem $gem_name is not installed"
         if install_gem "$gem_name"; then
             INSTALLED_COUNT=$((INSTALLED_COUNT + 1))
+            if ! $CHECK; then
+                echo "✓ gem $gem_name installed ($(gem_version_line "$gem_name"))"
+            fi
         else
             if ! $CHECK; then
                 FAILED_COUNT=$((FAILED_COUNT + 1))
@@ -96,7 +124,6 @@ for gem_name in "${GEM_PACKAGES[@]}"; do
 done
 
 if $CHECK; then
-    echo "Check   : Would install gems as needed (assert_gems)"
     echo "Result  : assert_gems check complete"
 else
     if [[ $FAILED_COUNT -eq 0 ]]; then
@@ -113,15 +140,12 @@ else
 fi
 
 if ! $CHECK; then
-    echo ""
-    echo "Info    : Verifying gem installations..."
     for gem_name in "${GEM_PACKAGES[@]}"; do
-        if is_gem_installed "$gem_name"; then
-            $DEBUG && echo "Debug   : ✓ $gem_name is installed"
-        else
+        if ! is_gem_installed "$gem_name"; then
             echo "Warning : $gem_name installation verification failed"
         fi
     done
+    verify_gem_commands || true
 fi
 
 echo "Result  : assert_gems finished successfully"

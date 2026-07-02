@@ -35,8 +35,7 @@
 #       Passed to assert_git.sh for SSH key paths and ownership.
 #
 #   --skip-cursor-extensions
-#       Skip assert_extensions.sh (use when running inside Cursor Agent or to avoid
-#       cursor CLI spawning extra windows; extension install needs an external terminal).
+#       Skip assert_extensions.sh (manual override only; normal runs install extensions).
 #
 #   --restart-lightdm | -r
 #       Passed to assert_xfce4.sh: restart LightDM after a live run (useful from SSH/cron).
@@ -209,8 +208,6 @@ fi
 # --- Cursor extension list enforcement from repo dotfiles/cursor/extensions.txt ---
 if $SKIP_CURSOR_EXTENSIONS; then
     echo "Info    : Skipping assert_extensions (--skip-cursor-extensions)"
-elif [[ -n "${CURSOR_AGENT:-}" ]]; then
-    echo "Info    : Skipping assert_extensions (CURSOR_AGENT — use external terminal for extension install)"
 else
     if ! run_step "assert_extensions" "$extensions_assert_script" "${common_args[@]}"; then
         echo "Warning : assert_extensions step failed"
