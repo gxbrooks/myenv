@@ -3,6 +3,7 @@
 # Assert MyEnv Personal Environment
 #
 # Orchestrates: assert_packages.sh (includes kitty + kitty-terminfo for remote TERM=xterm-kitty),
+# assert_gems.sh (AsciiDoctor PDF/diagram gems), assert_git.sh, assert_bashrc.sh,
 # assert_git.sh, assert_bashrc.sh, assert_dotfiles.sh, assert_extensions.sh, assert_sublime.sh,
 # assert_xfce4.sh
 # Idempotent and safe to run multiple times.
@@ -33,6 +34,10 @@
 #       Unix account name whose home directory and ~/.ssh are configured (default: current user).
 #       Passed to assert_git.sh for SSH key paths and ownership.
 #
+#   --skip-cursor-extensions
+#       Skip assert_extensions.sh (use when running inside Cursor Agent or to avoid
+#       cursor CLI spawning extra windows; extension install needs an external terminal).
+#
 #   --restart-lightdm | -r
 #       Passed to assert_xfce4.sh: restart LightDM after a live run (useful from SSH/cron).
 #
@@ -53,11 +58,13 @@ GIT_EMAIL=""
 GIT_PASSPHRASE=""
 GIT_USER=""
 XFCE_EXTRA_ARGS=()
+SKIP_CURSOR_EXTENSIONS=false
 
 script_path="${BASH_SOURCE[0]}"
 script_name="$(basename "$script_path")"
 script_dir="$(cd "$(dirname "$script_path")" && pwd)"
 packages_script="$script_dir/assert/assert_packages.sh"
+gems_script="$script_dir/assert/assert_gems.sh"
 bashrc_script="$script_dir/assert_bashrc.sh"
 git_assert_script="$script_dir/assert_git.sh"
 xfce_assert_script="$script_dir/assert/assert_xfce4.sh"
@@ -111,12 +118,15 @@ while [[ $# -gt 0 ]]; do
         --no-restart-lightdm|--skip-lightdm-restart)
             XFCE_EXTRA_ARGS+=(--no-restart-lightdm)
             ;;
+        --skip-cursor-extensions)
+            SKIP_CURSOR_EXTENSIONS=true
+            ;;
         --skip-firmware-update|--amdgpu-dc-off|--amdgpu-dc-on|--suppress-volman-noise)
             XFCE_EXTRA_ARGS+=("$1")
             ;;
         *)
             echo "Error   : Unrecognized argument $1 in $script_name."
-            echo "Usage   : $script_name [--Debug|-d] [--Check|-c] [--name|-n <git_name>] [--email|-e <git_email>] [--Passphrase|-p|-N <passphrase>] [--User|-u <username>] [--restart-lightdm|-r] [--no-restart-lightdm] [--skip-lightdm-restart] [--skip-firmware-update] [--amdgpu-dc-off] [--amdgpu-dc-on] [--suppress-volman-noise]"
+            echo "Usage   : $script_name [--Debug|-d] [--Check|-c] [--name|-n <git_name>] [--email|-e <git_email>] [--Passphrase|-p|-N <passphrase>] [--User|-u <username>] [--skip-cursor-extensions] [--restart-lightdm|-r] [--no-restart-lightdm] [--skip-lightdm-restart] [--skip-firmware-update] [--amdgpu-dc-off] [--amdgpu-dc-on] [--suppress-volman-noise]"
             exit 1
             ;;
     esac
@@ -170,6 +180,11 @@ if ! run_step "assert_packages" "$packages_script" "${common_args[@]}"; then
     echo "Warning : assert_packages step failed"
 fi
 
+# --- Ruby gems (AsciiDoctor PDF/diagram; requires ruby-rubygems from assert_packages) ---
+if ! run_step "assert_gems" "$gems_script" "${common_args[@]}"; then
+    echo "Warning : assert_gems step failed"
+fi
+
 # --- Git identity and SSH (all git/SSH logic lives in assert_git.sh) ---
 git_assert_args=("${common_args[@]}")
 [[ -n "$GIT_NAME" ]] && git_assert_args+=(--name "$GIT_NAME")
@@ -192,8 +207,14 @@ if ! run_step "assert_dotfiles" "$dotfiles_assert_script" "${common_args[@]}"; t
 fi
 
 # --- Cursor extension list enforcement from repo dotfiles/cursor/extensions.txt ---
-if ! run_step "assert_extensions" "$extensions_assert_script" "${common_args[@]}"; then
-    echo "Warning : assert_extensions step failed"
+if $SKIP_CURSOR_EXTENSIONS; then
+    echo "Info    : Skipping assert_extensions (--skip-cursor-extensions)"
+elif [[ -n "${CURSOR_AGENT:-}" ]]; then
+    echo "Info    : Skipping assert_extensions (CURSOR_AGENT — use external terminal for extension install)"
+else
+    if ! run_step "assert_extensions" "$extensions_assert_script" "${common_args[@]}"; then
+        echo "Warning : assert_extensions step failed"
+    fi
 fi
 
 # --- Sublime Text Package Control + Pretty JSON from repo dotfiles/sublime ---

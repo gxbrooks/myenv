@@ -48,7 +48,8 @@ myenv/
 │   ├── assert_xfce4.sh                # XFCE4/LightDM/KVM desktop assert
 │   ├── assert_amdgpu.sh               # AMD iGPU freeze config; --Check = health report
 │   ├── assert_dotfiles.sh             # Cursor settings/keybindings symlinks
-│   └── assert_extensions.sh           # Cursor extensions from extensions.txt
+│   ├── assert_extensions.sh           # Cursor extensions from extensions.txt (skip in CURSOR_AGENT)
+│   └── assert_gems.sh                 # Ruby gems (asciidoctor-pdf, asciidoctor-diagram)
 ├── diagnose/                          # On-demand diagnose & repair (not run at install by default)
 │   ├── recover_xfce_freeze.sh         # Recover frozen XFCE desktop over SSH (no reboot)
 │   ├── refresh_display_kvm.sh         # Full KVM display recovery (sudo, SSH-friendly)
@@ -142,6 +143,23 @@ Cursor configuration now lives in this repository:
 Use:
 - `bash assert/assert_dotfiles.sh` to assert symlinks (or import first-time files)
 - `bash assert/assert_extensions.sh` to assert Cursor extensions from `dotfiles/cursor/extensions.txt`
+
+**Run `assert_myenv.sh` from an external terminal** (kitty, ssh), not from the Cursor Agent terminal:
+
+| Step | Why external terminal |
+|------|------------------------|
+| `sudo apt install` / `sudo gem install` | Agent sandbox has no TTY for your sudo password |
+| `cursor --install-extension` | Invoking the Cursor CLI from inside a Cursor Agent session can spawn new Cursor windows repeatedly |
+
+The Agent sets `CURSOR_AGENT` in the shell; `assert_extensions.sh` and `assert_myenv.sh` skip extension install when that variable is present. For a full run including extensions and AsciiDoctor gems:
+
+```bash
+kitty -e bash -lc '~/repos/myenv/assert_myenv.sh'
+```
+
+Or from Cursor Agent (apt/gems only, no extension cascade): the orchestrator already skips extensions when `CURSOR_AGENT` is set.
+
+See [Cursor terminal / sandbox docs](https://cursor.com/docs/agent/tools/terminal) if the Agent reports sandbox restrictions.
 
 ## How It Works
 

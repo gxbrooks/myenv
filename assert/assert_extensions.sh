@@ -31,6 +31,15 @@ extensions_path="$repo_cursor_dir/$extensions_file"
 $DEBUG && echo "Debug   : Starting: $script_name"
 $DEBUG && echo "Debug   : extensions_path = $extensions_path"
 
+# Installing extensions via `cursor --install-extension` from inside a Cursor Agent
+# session spawns new Cursor/Electron instances (window cascade). Run assert_extensions
+# from an external terminal (kitty, ssh) instead. See README.md § Cursor extensions.
+if [[ -n "${CURSOR_AGENT:-}" ]]; then
+    echo "Info    : Skipping Cursor extension assertion (CURSOR_AGENT set — run from external terminal)"
+    echo "Result  : assert_extensions finished successfully"
+    exit 0
+fi
+
 if ! command -v cursor >/dev/null 2>&1; then
     if $CHECK; then
         echo "Check   : Would require Cursor CLI in PATH to assert extensions"

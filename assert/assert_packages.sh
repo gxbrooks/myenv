@@ -250,8 +250,9 @@ ensure_kitty_default_terminal() {
 
 EXTERNAL_REPO_PACKAGES=(sublime-text google-chrome-stable)
 STANDARD_PACKAGES=(kitty kitty-terminfo gnome-keyring libsecret-1-0 seahorse gh openssh-client keychain okular xfce4-screenshooter libreoffice)
+DOCS_PACKAGES=(asciidoctor ruby-rubygems)
 NETWORK_PACKAGES=(nmap speedtest-cli)
-ALL_APT_PACKAGES=("${EXTERNAL_REPO_PACKAGES[@]}" "${STANDARD_PACKAGES[@]}" "${NETWORK_PACKAGES[@]}")
+ALL_APT_PACKAGES=("${EXTERNAL_REPO_PACKAGES[@]}" "${STANDARD_PACKAGES[@]}" "${DOCS_PACKAGES[@]}" "${NETWORK_PACKAGES[@]}")
 
 $DEBUG && echo "Debug   : APT packages to check/install: ${ALL_APT_PACKAGES[*]}"
 
