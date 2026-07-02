@@ -8,8 +8,8 @@ mechatroner.rainbow-csv
 mermaidchart.vscode-mermaid-chart
 ms-azuretools.vscode-containers
 ms-azuretools.vscode-docker
-ms-python.debugpy
 ms-python.python
+ms-python.debugpy
 ms-vscode.powershell
 redhat.java
 redhat.vscode-yaml

@@ -17,5 +17,16 @@
     "**/.metals": true
   },
   "window.confirmSaveUntitledWorkspace": false,
-  "markdown.mermaid.enabled": true
+  "markdown.mermaid.enabled": true,
+  "asciidoc.extensions.enableKroki": true,
+  "asciidoc.preview.asciidoctorAttributes": {
+    "kroki-server-url": "https://kroki.io",
+    "kroki-http-method": "post",
+    "kroki-default-format": "png"
+  },
+  "asciidoc.pdf.engine": "asciidoctor-pdf",
+  "asciidoc.pdf.asciidoctorPdfCommandArgs": [
+    "-r",
+    "asciidoctor-diagram"
+  ]
 }

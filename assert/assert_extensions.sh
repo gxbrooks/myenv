@@ -34,22 +34,38 @@ extensions_path="$repo_cursor_dir/$extensions_file"
 $DEBUG && echo "Debug   : Starting: $script_name"
 $DEBUG && echo "Debug   : extensions_path = $extensions_path"
 
-resolve_cursor_cli() {
+resolve_cursor_cli_script() {
     local candidate
-
-    # Prefer the headless CLI script shipped with Cursor (cli.js via ELECTRON_RUN_AS_NODE).
-    for candidate in /opt/cursor/usr/share/cursor/bin/cursor /opt/cursor/bin/cursor; do
-        if [[ -x "$candidate" ]]; then
+    for candidate in \
+        /opt/cursor/usr/share/cursor/bin/cursor \
+        /opt/cursor/bin/cursor; do
+        if [[ -x "$candidate" ]] && ! file "$candidate" 2>/dev/null | grep -q 'ELF'; then
             echo "$candidate"
             return 0
         fi
     done
+    return 1
+}
 
+resolve_cursor_cli() {
+    local candidate
+
+    if candidate="$(resolve_cursor_cli_script 2>/dev/null)"; then
+        echo "$candidate"
+        return 0
+    fi
+
+    # Only trust PATH cursor when it is the headless launcher, not the Electron binary.
     if command -v cursor >/dev/null 2>&1; then
         candidate="$(command -v cursor)"
-        if [[ -x "$candidate" ]]; then
-            echo "$candidate"
-            return 0
+        if [[ -x "$candidate" ]] && ! file "$candidate" 2>/dev/null | grep -q 'ELF'; then
+            if grep -qF 'usr/share/cursor/cursor"' "$candidate" 2>/dev/null \
+                && ! grep -qF 'usr/share/cursor/bin/cursor"' "$candidate" 2>/dev/null; then
+                $DEBUG && echo "Debug   : Ignoring $candidate (wrapper execs Electron binary)"
+            else
+                echo "$candidate"
+                return 0
+            fi
         fi
     fi
 
@@ -156,14 +172,50 @@ fi
 
 echo "Info    : Installing ${#missing_extensions[@]} missing extension(s) via headless Cursor CLI"
 
-install_args=()
+# Install in dependency waves so dependents (e.g. debugpy) are not activated before
+# their prerequisites (e.g. ms-python.python) finish installing.
+declare -A extension_deps=(
+    ["ms-python.debugpy"]="ms-python.python"
+    ["vscjava.vscode-java-debug"]="redhat.java"
+    ["vscjava.vscode-java-test"]="redhat.java"
+    ["vscjava.vscode-java-dependency"]="redhat.java"
+    ["vscjava.vscode-maven"]="redhat.java"
+    ["vscjava.vscode-gradle"]="redhat.java"
+)
+
+install_batch() {
+    local -a batch=("$@")
+    [[ ${#batch[@]} -eq 0 ]] && return 0
+    local -a install_args=()
+    local extension_id
+    for extension_id in "${batch[@]}"; do
+        install_args+=(--install-extension "$extension_id")
+    done
+    cursor_cli "${install_args[@]}"
+}
+
+declare -a wave1=()
+declare -a wave2=()
+
 for extension_id in "${missing_extensions[@]}"; do
-    install_args+=(--install-extension "$extension_id")
+    dep="${extension_deps[$extension_id]:-}"
+    if [[ -n "$dep" ]] && printf '%s\n' "${missing_extensions[@]}" | grep -Fxq "$dep"; then
+        wave2+=("$extension_id")
+    else
+        wave1+=("$extension_id")
+    fi
 done
 
-if ! cursor_cli "${install_args[@]}"; then
-    echo "Error   : Cursor extension install failed"
+if ! install_batch "${wave1[@]}"; then
+    echo "Error   : Cursor extension install failed (wave 1)"
     exit 1
+fi
+
+if [[ ${#wave2[@]} -gt 0 ]]; then
+    if ! install_batch "${wave2[@]}"; then
+        echo "Error   : Cursor extension install failed (wave 2)"
+        exit 1
+    fi
 fi
 
 # Verify installs

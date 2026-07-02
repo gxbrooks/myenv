@@ -150,15 +150,29 @@ setup_external_repos() {
     fi
 }
 
+# Resolve headless Cursor CLI launcher (shell script), not the Electron binary.
+# AppImage extract layout uses usr/share/cursor/bin/cursor; some installs use bin/cursor.
+resolve_cursor_cli_script() {
+    local candidate
+    for candidate in \
+        /opt/cursor/usr/share/cursor/bin/cursor \
+        /opt/cursor/bin/cursor; do
+        if [[ -x "$candidate" ]] && ! file "$candidate" 2>/dev/null | grep -q 'ELF'; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
 # /usr/local/bin/cursor must invoke bin/cursor (headless cli.js), not the Electron binary.
 # Exec'ing the binary directly boots a GUI window for every --list-extensions / --install-extension call.
 ensure_cursor_cli_wrapper() {
-    local install_dir="/opt/cursor"
-    local cli_script="$install_dir/bin/cursor"
+    local cli_script
     local wrapper="/usr/local/bin/cursor"
 
-    if [[ ! -x "$cli_script" ]]; then
-        $DEBUG && echo "Debug   : Cursor CLI script not found at $cli_script — skipping wrapper update"
+    if ! cli_script="$(resolve_cursor_cli_script)"; then
+        $DEBUG && echo "Debug   : Cursor CLI script not found — skipping wrapper update"
         return 0
     fi
 

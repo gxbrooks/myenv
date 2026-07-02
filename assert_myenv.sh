@@ -206,6 +206,10 @@ if ! run_step "assert_dotfiles" "$dotfiles_assert_script" "${common_args[@]}"; t
 fi
 
 # --- Cursor extension list enforcement from repo dotfiles/cursor/extensions.txt ---
+if [[ -n "${CURSOR_AGENT:-}" ]] && ! $SKIP_CURSOR_EXTENSIONS; then
+    SKIP_CURSOR_EXTENSIONS=true
+    echo "Info    : Skipping assert_extensions (CURSOR_AGENT — avoid GUI side effects during agent session)"
+fi
 if $SKIP_CURSOR_EXTENSIONS; then
     echo "Info    : Skipping assert_extensions (--skip-cursor-extensions)"
 else

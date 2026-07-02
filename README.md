@@ -149,11 +149,11 @@ Use:
 | Step | Notes |
 |------|--------|
 | `sudo apt install` / `sudo gem install` | Needs a TTY for your sudo password (Agent sandbox often blocks this) |
-| `assert_extensions.sh` | Uses `/opt/cursor/bin/cursor` (cli.js) via `/usr/local/bin/cursor`; one list call + one batched install |
+| `assert_extensions.sh` | Uses `/opt/cursor/usr/share/cursor/bin/cursor` (headless cli.js) via `/usr/local/bin/cursor`; dependency-ordered install waves |
 
 `assert_packages.sh` ensures `/usr/local/bin/cursor` execs the headless CLI script, **not** the Electron binary. The old wrapper (`exec /opt/cursor/.../cursor`) caused a new Cursor window on every `--list-extensions` / `--install-extension` call.
 
-The Agent sets `CURSOR_AGENT` in the shell; use kitty for full assert when sudo is required.
+The Agent sets `CURSOR_AGENT` in the shell; `assert_myenv.sh` skips extension install during agent sessions. Run full assert from kitty when sudo or extension sync is required.
 
 See [Cursor terminal / sandbox docs](https://cursor.com/docs/agent/tools/terminal) if the Agent reports sandbox restrictions.
 
