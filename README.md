@@ -159,7 +159,7 @@ See [Cursor terminal / sandbox docs](https://cursor.com/docs/agent/tools/termina
 
 ### AsciiDoc and PlantUML (documentation builds)
 
-`assert_packages.sh` installs `asciidoctor`, `graphviz`, and `plantuml`; `assert_gems.sh` installs `asciidoctor-pdf` and `asciidoctor-diagram`. Together they render `[plantuml]` blocks in `.adoc` files to HTML and PDF (no Mermaid CLI or Kroki required).
+`assert_packages.sh` installs `asciidoctor`, `graphviz`, and `plantuml`; **`draw.io` desktop** (official `.deb` from [jgraph/drawio-desktop](https://github.com/jgraph/drawio-desktop) GitHub releases — provides the `drawio` CLI for GUI editing and headless SVG/PNG export); `assert_gems.sh` installs `asciidoctor-pdf` and `asciidoctor-diagram`. Together they render `[plantuml]` blocks in `.adoc` files to HTML and PDF (no Mermaid CLI or Kroki required).
 
 After `assert_myenv.sh`, build a document from its directory:
 

@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Assert MyEnv — apt repos, packages, and Cursor (AppImage).
+# Assert MyEnv — apt repos, packages, Cursor (AppImage), and draw.io desktop (.deb).
 # Idempotent. Invoked by assert_myenv.sh or run standalone.
 #
 # Usage: assert_packages.sh [--Debug|-d] [--Check|-c]
@@ -314,6 +314,80 @@ DESKTOP
     return 0
 }
 
+is_drawio_installed() {
+    command -v drawio >/dev/null 2>&1
+}
+
+# draw.io desktop — official .deb from jgraph/drawio-desktop (not in Ubuntu apt).
+# Provides /usr/bin/drawio for GUI editing and headless export (-x -f svg).
+install_drawio() {
+    if is_drawio_installed; then
+        $DEBUG && echo "Debug   : draw.io desktop already installed ($(command -v drawio))"
+        return 0
+    fi
+
+    if $CHECK; then
+        echo "Check   : Would install draw.io desktop (.deb from GitHub releases)"
+        return 1
+    fi
+
+    echo "Info    : Installing draw.io desktop"
+
+    if ! command -v curl &>/dev/null; then
+        echo "Info    : Installing curl (required for draw.io download)"
+        sudo apt install -y curl || {
+            echo "Error   : Failed to install curl"
+            return 1
+        }
+    fi
+
+    if ! command -v jq &>/dev/null; then
+        echo "Info    : Installing jq (required to parse draw.io release API)"
+        sudo apt install -y jq || {
+            echo "Error   : Failed to install jq"
+            return 1
+        }
+    fi
+
+    local api_url="https://api.github.com/repos/jgraph/drawio-desktop/releases/latest"
+    $DEBUG && echo "Debug   : Fetching draw.io release from GitHub API"
+
+    local deb_url deb_name
+    deb_url=$(curl -fsSL "$api_url" | jq -r '.assets[] | select(.name | test("^drawio-amd64-.*\\.deb$")) | .browser_download_url' | head -1)
+    deb_name=$(basename "$deb_url")
+
+    if [[ -z "$deb_url" || "$deb_url" == "null" ]]; then
+        echo "Error   : Failed to resolve draw.io .deb download URL from GitHub releases"
+        return 1
+    fi
+
+    $DEBUG && echo "Debug   : draw.io download URL: $deb_url"
+
+    local tmp_deb
+    tmp_deb=$(mktemp /tmp/drawio_XXXXXX.deb)
+    curl -fsSL -L "$deb_url" -o "$tmp_deb" || {
+        echo "Error   : Failed to download draw.io .deb"
+        rm -f "$tmp_deb"
+        return 1
+    }
+
+    echo "Info    : Installing $deb_name"
+    sudo apt install -y "$tmp_deb" || {
+        echo "Error   : Failed to install draw.io desktop package"
+        rm -f "$tmp_deb"
+        return 1
+    }
+    rm -f "$tmp_deb"
+
+    if is_drawio_installed; then
+        echo "Result  : Successfully installed draw.io desktop ($deb_name)"
+        return 0
+    fi
+
+    echo "Error   : draw.io package installed but drawio command not found in PATH"
+    return 1
+}
+
 # Ensure Debian x-terminal-emulator alternative points at kitty (XFCE helpers use it).
 ensure_kitty_default_terminal() {
     local kitty_bin="/usr/bin/kitty"
@@ -388,6 +462,14 @@ else
     ensure_cursor_cli_wrapper
 fi
 
+if ! install_drawio; then
+    if ! $CHECK; then
+        FAILED_COUNT=$((FAILED_COUNT + 1))
+        FAILED_STEPS+=("tool:drawio")
+        echo "Warning : draw.io desktop installation step failed"
+    fi
+fi
+
 ensure_kitty_default_terminal || true
 
 if $CHECK; then
@@ -422,6 +504,11 @@ if ! $CHECK; then
         $DEBUG && echo "Debug   : ✓ cursor is installed"
     else
         echo "Warning : cursor installation verification failed"
+    fi
+    if is_drawio_installed; then
+        $DEBUG && echo "Debug   : ✓ drawio is installed ($(drawio --version 2>&1 | head -1 || echo 'drawio'))"
+    else
+        echo "Warning : draw.io desktop (drawio) installation verification failed"
     fi
     if [[ -x /usr/bin/kitty ]]; then
         cur=$(readlink -f /etc/alternatives/x-terminal-emulator 2>/dev/null || true)

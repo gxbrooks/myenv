@@ -174,7 +174,7 @@ run_step() {
     return 0
 }
 
-# --- Packages and Cursor (apt repos, AppImage) ---
+# --- Packages, Cursor (AppImage), and draw.io desktop (.deb) ---
 if ! run_step "assert_packages" "$packages_script" "${common_args[@]}"; then
     echo "Warning : assert_packages step failed"
 fi
