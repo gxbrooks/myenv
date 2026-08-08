@@ -28,5 +28,7 @@
   "asciidoc.pdf.asciidoctorPdfCommandArgs": [
     "-r",
     "asciidoctor-diagram"
-  ]
+  ],
+  "window.autoDetectColorScheme": false,
+  "cursor.cpp.enablePartialAccepts": true
 }

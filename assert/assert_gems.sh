@@ -28,7 +28,9 @@ $DEBUG && echo "Debug   : Starting: $script_name"
 $DEBUG && echo "Debug   : script_dir = $script_dir"
 $DEBUG && echo "Debug   : CHECK = $CHECK"
 
-GEM_PACKAGES=(asciidoctor-pdf asciidoctor-diagram)
+# rouge: server-side source highlighting for asciidoctor HTML and asciidoctor-pdf
+# (highlight.js is client-side only and does not colorize PDF).
+GEM_PACKAGES=(asciidoctor-pdf asciidoctor-diagram rouge)
 
 is_gem_installed() {
     local gem_name=$1
@@ -57,7 +59,11 @@ install_gem() {
     fi
 
     echo "Info    : Installing gem: $gem_name"
-    if sudo gem install "$gem_name"; then
+    # Prefer system gem dir; fall back to user install (no sudo).
+    # rouge ≥4 may need ruby-dev (strscan); pin 3.30.0 as a pure-Ruby fallback.
+    if sudo -n gem install "$gem_name" 2>/dev/null \
+        || gem install --user-install "$gem_name" 2>/dev/null \
+        || { [[ "$gem_name" == "rouge" ]] && gem install --user-install -v 3.30.0 rouge; }; then
         echo "Result  : Successfully installed gem $gem_name"
         return 0
     fi
