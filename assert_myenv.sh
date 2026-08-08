@@ -2,10 +2,9 @@
 
 # Assert MyEnv Personal Environment
 #
-# Orchestrates: assert_packages.sh (includes kitty + kitty-terminfo for remote TERM=xterm-kitty),
+# Orchestrates: assert_packages.sh (kitty, draw.io, csdm-injector, context-variables .debs),
 # assert_gems.sh (AsciiDoctor PDF/diagram gems), assert_git.sh, assert_bashrc.sh,
-# assert_git.sh, assert_bashrc.sh, assert_dotfiles.sh, assert_extensions.sh, assert_sublime.sh,
-# assert_xfce4.sh
+# assert_dotfiles.sh, assert_extensions.sh, assert_sublime.sh, assert_xfce4.sh
 # Idempotent and safe to run multiple times.
 #
 # Parameters (CLI flags and values consumed here):
@@ -174,7 +173,7 @@ run_step() {
     return 0
 }
 
-# --- Packages, Cursor (AppImage), and draw.io desktop (.deb) ---
+# --- Packages, Cursor (AppImage), draw.io (.deb), csdm-injector (.deb via apt) ---
 if ! run_step "assert_packages" "$packages_script" "${common_args[@]}"; then
     echo "Warning : assert_packages step failed"
 fi

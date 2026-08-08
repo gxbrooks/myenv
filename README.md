@@ -45,11 +45,12 @@ This project provides a complete XFCE4 desktop environment configuration with KV
 myenv/
 ├── README.md
 ├── assert/                            # Idempotent setup scripts (run via assert_myenv.sh)
+│   ├── assert_packages.sh             # apt packages, Cursor, draw.io, csdm-injector, context-variables
 │   ├── assert_xfce4.sh                # XFCE4/LightDM/KVM desktop assert
 │   ├── assert_amdgpu.sh               # AMD iGPU freeze config; --Check = health report
 │   ├── assert_dotfiles.sh             # Cursor settings/keybindings symlinks
 │   ├── assert_extensions.sh           # Cursor extensions from extensions.txt (skip in CURSOR_AGENT)
-│   └── assert_gems.sh                 # Ruby gems (asciidoctor-pdf, asciidoctor-diagram)
+│   └── assert_gems.sh                 # Ruby gems (asciidoctor-pdf, asciidoctor-diagram, rouge)
 ├── diagnose/                          # On-demand diagnose & repair (not run at install by default)
 │   ├── recover_xfce_freeze.sh         # Recover frozen XFCE desktop over SSH (no reboot)
 │   ├── refresh_display_kvm.sh         # Full KVM display recovery (sudo, SSH-friendly)
@@ -157,9 +158,28 @@ The Agent sets `CURSOR_AGENT` in the shell; `assert_myenv.sh` skips extension in
 
 See [Cursor terminal / sandbox docs](https://cursor.com/docs/agent/tools/terminal) if the Agent reports sandbox restrictions.
 
+### csdm-injector credentials (local env — not in git)
+
+Sensitive `SN_*` variables are **not** stored in this repository. Best practice for a
+small related block of CLI secrets on a Linux workstation:
+
+| Practice | Choice here |
+|----------|-------------|
+| Location | XDG config: `~/.config/csdm-injector/env` |
+| Permissions | directory `0700`, file `0600` |
+| Format | shell `KEY=value` (dotenv), single-quote passwords with metacharacters |
+| Loading | myenv `.bashrc` sources the file with `set -a` when it exists |
+| Template | `dotfiles/csdm-injector/env.example` (placeholders only) |
+
+`assert_bashrc.sh` creates the directory, copies the example to `env` **once** (never
+overwrites an existing `env`), and refreshes `env.example` beside it. Fill in real
+values locally; open a new shell (or `set -a; source ~/.config/csdm-injector/env; set +a`).
+
+Optional overrides: `XDG_CONFIG_HOME`, or set `CSDM_INJECTOR_SRC` when building the `.deb`.
+
 ### AsciiDoc and PlantUML (documentation builds)
 
-`assert_packages.sh` installs `asciidoctor`, `graphviz`, and `plantuml`; **`draw.io` desktop** (official `.deb` from [jgraph/drawio-desktop](https://github.com/jgraph/drawio-desktop) GitHub releases — provides the `drawio` CLI for GUI editing and headless SVG/PNG export); `assert_gems.sh` installs `asciidoctor-pdf` and `asciidoctor-diagram`. Together they render `[plantuml]` blocks in `.adoc` files to HTML and PDF (no Mermaid CLI or Kroki required).
+`assert_packages.sh` installs `asciidoctor`, `graphviz`, and `plantuml`; **`draw.io` desktop** (official `.deb` from [jgraph/drawio-desktop](https://github.com/jgraph/drawio-desktop) GitHub releases — provides the `drawio` CLI for GUI editing and headless SVG/PNG export); **`csdm-injector`** (builds a local `.deb` from [`~/repos/csdm-injector`](https://github.com/gxbrooks/csdm-injector); override with `CSDM_INJECTOR_SRC` / `CSDM_INJECTOR_FORCE=1`); and **`context-variables`** (builds from [`~/repos/context-variables`](https://github.com/gxbrooks/context-variables); `CONTEXT_VARIABLES_SRC` / `CONTEXT_VARIABLES_FORCE=1` — provides `generate-contexts` / `vars-grid`). `assert_gems.sh` installs `asciidoctor-pdf`, `asciidoctor-diagram`, and `rouge` (server-side source highlighting for HTML/PDF). Together they render `[plantuml]` blocks in `.adoc` files to HTML and PDF (no Mermaid CLI or Kroki required).
 
 After `assert_myenv.sh`, build a document from its directory:
 

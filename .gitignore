@@ -5,3 +5,10 @@
 # Primarily for AI agents to use as a scratch space
 tmp/
 
+# Never commit local secret env files if copied into the tree by mistake
+.env
+.env.*
+!**/.env.example
+**/csdm-injector/env
+
+

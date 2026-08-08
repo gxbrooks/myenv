@@ -1,5 +1,16 @@
 # myenv — personal shell hooks (native Linux). Sourced from ~/.bashrc (see assert_myenv.sh).
 
+# csdm-injector — load local secrets (XDG). File is never in the myenv git tree.
+# Create/seed via assert_bashrc.sh → ~/.config/csdm-injector/env (mode 0600).
+_csdm_env="${XDG_CONFIG_HOME:-$HOME/.config}/csdm-injector/env"
+if [[ -f "${_csdm_env}" && -r "${_csdm_env}" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "${_csdm_env}"
+  set +a
+fi
+unset _csdm_env
+
 # Load SSH keys into ssh-agent via keychain (install keychain via assert_myenv.sh / apt).
 # Prefer keychain over raw ssh-add so passphrases are cached per login session.
 # Only id_ed25519_<purpose> keys (e.g. _github, _ansible). Legacy id_ed25519 / id_rsa are deprecated.

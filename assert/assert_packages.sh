@@ -1,9 +1,14 @@
 #!/bin/bash
 #
-# Assert MyEnv — apt repos, packages, Cursor (AppImage), and draw.io desktop (.deb).
+# Assert MyEnv — apt repos, packages, Cursor (AppImage), draw.io desktop (.deb),
+# csdm-injector and context-variables (.deb via apt).
 # Idempotent. Invoked by assert_myenv.sh or run standalone.
 #
 # Usage: assert_packages.sh [--Debug|-d] [--Check|-c]
+#
+# csdm-injector: ~/repos/csdm-injector (CSDM_INJECTOR_SRC / CSDM_INJECTOR_FORCE=1)
+# context-variables: ~/repos/context-variables (CONTEXT_VARIABLES_SRC / CONTEXT_VARIABLES_FORCE=1)
+#   → generate-contexts / vars-grid on PATH
 
 DEBUG=false
 CHECK=false
@@ -388,6 +393,276 @@ install_drawio() {
     return 1
 }
 
+is_csdm_injector_installed() {
+    is_package_installed csdm-injector && command -v csdm-inject >/dev/null 2>&1
+}
+
+# Resolve csdm-injector git checkout (build-deb.sh source tree).
+resolve_csdm_injector_src() {
+    local myenv_root candidate
+    myenv_root="$(cd "$script_dir/.." && pwd)"
+    local candidates=(
+        "${CSDM_INJECTOR_SRC:-}"
+        "${HOME}/repos/csdm-injector"
+        "$(cd "${myenv_root}/.." && pwd)/csdm-injector"
+    )
+    for candidate in "${candidates[@]}"; do
+        [[ -z "$candidate" ]] && continue
+        if [[ -f "${candidate}/packaging/build-deb.sh" ]]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+ensure_csdm_injector_src() {
+    local src
+    if src="$(resolve_csdm_injector_src)"; then
+        echo "$src"
+        return 0
+    fi
+
+    local dest="${HOME}/repos/csdm-injector"
+    if $CHECK; then
+        echo "Check   : Would clone https://github.com/gxbrooks/csdm-injector.git → $dest" >&2
+        return 1
+    fi
+
+    if ! command -v git >/dev/null 2>&1; then
+        echo "Error   : git is required to clone csdm-injector" >&2
+        return 1
+    fi
+
+    mkdir -p "$(dirname "$dest")"
+    echo "Info    : Cloning csdm-injector into $dest" >&2
+    if git clone --depth 1 https://github.com/gxbrooks/csdm-injector.git "$dest"; then
+        echo "$dest"
+        return 0
+    fi
+    echo "Error   : Failed to clone csdm-injector (try SSH or set CSDM_INJECTOR_SRC)" >&2
+    return 1
+}
+
+# csdm-injector — build local .deb (packaging/build-deb.sh) and install via apt.
+# Not in Ubuntu archives; same pattern as draw.io (local .deb → apt install).
+install_csdm_injector() {
+    if is_csdm_injector_installed && [[ "${CSDM_INJECTOR_FORCE:-0}" != "1" ]]; then
+        local ver
+        ver="$(dpkg-query -W -f='${Version}' csdm-injector 2>/dev/null || echo '?')"
+        if $CHECK; then
+            echo "Check   : csdm-injector already installed ($ver); would rebuild if CSDM_INJECTOR_FORCE=1"
+        else
+            $DEBUG && echo "Debug   : csdm-injector already installed ($ver)"
+            echo "✓ csdm-injector is already installed ($ver)"
+        fi
+        return 0
+    fi
+
+    if $CHECK; then
+        echo "Check   : Would build and apt-install csdm-injector .deb from source checkout"
+        return 1
+    fi
+
+    echo "Info    : Installing csdm-injector (Debian package via apt)"
+
+    local build_deps=(python3 python3-venv python3-pip rsync dpkg-dev fakeroot)
+    local dep
+    for dep in "${build_deps[@]}"; do
+        if ! is_package_installed "$dep"; then
+            echo "Info    : Installing build dependency: $dep"
+            sudo apt update -qq
+            sudo apt install -y "$dep" || {
+                echo "Error   : Failed to install build dependency $dep"
+                return 1
+            }
+        fi
+    done
+
+    # ensurepip often needs the versioned venv package (e.g. python3.12-venv).
+    local py_minor
+    py_minor="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || true)"
+    if [[ -n "$py_minor" ]] && ! python3 -c 'import ensurepip' >/dev/null 2>&1; then
+        echo "Info    : Installing python${py_minor}-venv (ensurepip)"
+        sudo apt install -y "python${py_minor}-venv" || true
+    fi
+
+    local src
+    if ! src="$(ensure_csdm_injector_src)"; then
+        return 1
+    fi
+    $DEBUG && echo "Debug   : csdm-injector source: $src"
+
+    echo "Info    : Building csdm-injector .deb (./packaging/build-deb.sh)"
+    if ! (cd "$src" && ./packaging/build-deb.sh); then
+        echo "Error   : Failed to build csdm-injector .deb"
+        return 1
+    fi
+
+    local deb
+    deb="$(ls -1t "$src"/dist/csdm-injector_*_all.deb 2>/dev/null | head -1 || true)"
+    if [[ -z "$deb" || ! -f "$deb" ]]; then
+        echo "Error   : No csdm-injector_*.deb found under $src/dist"
+        return 1
+    fi
+
+    # Copy to /tmp so apt's _apt user can read the archive (avoids $HOME sandbox note).
+    local tmp_deb
+    tmp_deb="$(mktemp /tmp/csdm-injector_XXXXXX.deb)"
+    cp -f "$deb" "$tmp_deb"
+
+    # Drop legacy install.sh symlinks that would shadow /usr/bin wrappers.
+    sudo rm -f /usr/local/bin/csdm-inject /usr/local/bin/csdm-delete \
+        /usr/local/bin/csdm-diff /usr/local/bin/csdm-validate
+
+    echo "Info    : apt install $(basename "$deb")"
+    if ! sudo apt install -y "$tmp_deb"; then
+        echo "Error   : Failed to apt-install csdm-injector"
+        rm -f "$tmp_deb"
+        return 1
+    fi
+    rm -f "$tmp_deb"
+
+    if is_csdm_injector_installed; then
+        echo "Result  : Successfully installed csdm-injector ($(dpkg-query -W -f='${Version}' csdm-injector))"
+        return 0
+    fi
+    echo "Error   : csdm-injector package installed but csdm-inject not on PATH"
+    return 1
+}
+
+is_context_variables_installed() {
+    is_package_installed context-variables && command -v generate-contexts >/dev/null 2>&1
+}
+
+resolve_context_variables_src() {
+    local myenv_root candidate
+    myenv_root="$(cd "$script_dir/.." && pwd)"
+    local candidates=(
+        "${CONTEXT_VARIABLES_SRC:-}"
+        "${HOME}/repos/context-variables"
+        "$(cd "${myenv_root}/.." && pwd)/context-variables"
+    )
+    for candidate in "${candidates[@]}"; do
+        [[ -z "$candidate" ]] && continue
+        if [[ -f "${candidate}/packaging/build-deb.sh" ]]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+ensure_context_variables_src() {
+    local src
+    if src="$(resolve_context_variables_src)"; then
+        echo "$src"
+        return 0
+    fi
+
+    local dest="${HOME}/repos/context-variables"
+    if $CHECK; then
+        echo "Check   : Would clone https://github.com/gxbrooks/context-variables.git → $dest" >&2
+        return 1
+    fi
+
+    if ! command -v git >/dev/null 2>&1; then
+        echo "Error   : git is required to clone context-variables" >&2
+        return 1
+    fi
+
+    mkdir -p "$(dirname "$dest")"
+    echo "Info    : Cloning context-variables into $dest" >&2
+    if git clone --depth 1 https://github.com/gxbrooks/context-variables.git "$dest"; then
+        echo "$dest"
+        return 0
+    fi
+    echo "Error   : Failed to clone context-variables (or set CONTEXT_VARIABLES_SRC)" >&2
+    return 1
+}
+
+# context-variables — build local .deb and install via apt (generate-contexts / vars-grid).
+install_context_variables() {
+    if is_context_variables_installed && [[ "${CONTEXT_VARIABLES_FORCE:-0}" != "1" ]]; then
+        local ver
+        ver="$(dpkg-query -W -f='${Version}' context-variables 2>/dev/null || echo '?')"
+        if $CHECK; then
+            echo "Check   : context-variables already installed ($ver); would rebuild if CONTEXT_VARIABLES_FORCE=1"
+        else
+            $DEBUG && echo "Debug   : context-variables already installed ($ver)"
+            echo "✓ context-variables is already installed ($ver)"
+        fi
+        return 0
+    fi
+
+    if $CHECK; then
+        echo "Check   : Would build and apt-install context-variables .deb from source checkout"
+        return 1
+    fi
+
+    echo "Info    : Installing context-variables (Debian package via apt)"
+
+    local build_deps=(python3 python3-venv python3-pip python3-yaml rsync dpkg-dev fakeroot)
+    local dep
+    for dep in "${build_deps[@]}"; do
+        if ! is_package_installed "$dep"; then
+            echo "Info    : Installing build dependency: $dep"
+            sudo apt update -qq
+            sudo apt install -y "$dep" || {
+                echo "Error   : Failed to install build dependency $dep"
+                return 1
+            }
+        fi
+    done
+
+    local py_minor
+    py_minor="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || true)"
+    if [[ -n "$py_minor" ]] && ! python3 -c 'import ensurepip' >/dev/null 2>&1; then
+        echo "Info    : Installing python${py_minor}-venv (ensurepip)"
+        sudo apt install -y "python${py_minor}-venv" || true
+    fi
+
+    local src
+    if ! src="$(ensure_context_variables_src)"; then
+        return 1
+    fi
+    $DEBUG && echo "Debug   : context-variables source: $src"
+
+    echo "Info    : Building context-variables .deb (./packaging/build-deb.sh)"
+    if ! (cd "$src" && ./packaging/build-deb.sh); then
+        echo "Error   : Failed to build context-variables .deb"
+        return 1
+    fi
+
+    local deb
+    deb="$(ls -1t "$src"/dist/context-variables_*_all.deb 2>/dev/null | head -1 || true)"
+    if [[ -z "$deb" || ! -f "$deb" ]]; then
+        echo "Error   : No context-variables_*.deb found under $src/dist"
+        return 1
+    fi
+
+    local tmp_deb
+    tmp_deb="$(mktemp /tmp/context-variables_XXXXXX.deb)"
+    cp -f "$deb" "$tmp_deb"
+
+    sudo rm -f /usr/local/bin/generate-contexts /usr/local/bin/vars-grid
+
+    echo "Info    : apt install $(basename "$deb")"
+    if ! sudo apt install -y "$tmp_deb"; then
+        echo "Error   : Failed to apt-install context-variables"
+        rm -f "$tmp_deb"
+        return 1
+    fi
+    rm -f "$tmp_deb"
+
+    if is_context_variables_installed; then
+        echo "Result  : Successfully installed context-variables ($(dpkg-query -W -f='${Version}' context-variables))"
+        return 0
+    fi
+    echo "Error   : context-variables package installed but generate-contexts not on PATH"
+    return 1
+}
+
 # Ensure Debian x-terminal-emulator alternative points at kitty (XFCE helpers use it).
 ensure_kitty_default_terminal() {
     local kitty_bin="/usr/bin/kitty"
@@ -470,6 +745,22 @@ if ! install_drawio; then
     fi
 fi
 
+if ! install_csdm_injector; then
+    if ! $CHECK; then
+        FAILED_COUNT=$((FAILED_COUNT + 1))
+        FAILED_STEPS+=("tool:csdm-injector")
+        echo "Warning : csdm-injector installation step failed"
+    fi
+fi
+
+if ! install_context_variables; then
+    if ! $CHECK; then
+        FAILED_COUNT=$((FAILED_COUNT + 1))
+        FAILED_STEPS+=("tool:context-variables")
+        echo "Warning : context-variables installation step failed"
+    fi
+fi
+
 ensure_kitty_default_terminal || true
 
 if $CHECK; then
@@ -509,6 +800,16 @@ if ! $CHECK; then
         $DEBUG && echo "Debug   : ✓ drawio is installed ($(drawio --version 2>&1 | head -1 || echo 'drawio'))"
     else
         echo "Warning : draw.io desktop (drawio) installation verification failed"
+    fi
+    if is_csdm_injector_installed; then
+        $DEBUG && echo "Debug   : ✓ csdm-injector is installed ($(dpkg-query -W -f='${Version}' csdm-injector) → $(command -v csdm-inject))"
+    else
+        echo "Warning : csdm-injector (csdm-inject) installation verification failed"
+    fi
+    if is_context_variables_installed; then
+        $DEBUG && echo "Debug   : ✓ context-variables is installed ($(dpkg-query -W -f='${Version}' context-variables) → $(command -v generate-contexts))"
+    else
+        echo "Warning : context-variables (generate-contexts) installation verification failed"
     fi
     if [[ -x /usr/bin/kitty ]]; then
         cur=$(readlink -f /etc/alternatives/x-terminal-emulator 2>/dev/null || true)
