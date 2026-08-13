@@ -1,8 +1,8 @@
 #!/bin/bash
 #
 # Assert dotfiles for Cursor config.
-# Ensures ~/.config/Cursor/User/{settings.json,keybindings.json} are symlinked to
-# this repository under dotfiles/cursor/.
+# Ensures ~/.config/Cursor/User/{settings.json,keybindings.json} and
+# snippets/markdown.json are symlinked to this repository under dotfiles/cursor/.
 #
 # Usage:
 #   ./assert_dotfiles.sh              # Standard mode (repo version takes precedence)
@@ -39,6 +39,8 @@ CURSOR_CONFIG_DIR="$HOME/.config/Cursor/User"
 REPO_CURSOR_DIR="$repo_root/dotfiles/cursor"
 SETTINGS_FILE="settings.json"
 KEYBINDINGS_FILE="keybindings.json"
+SNIPPETS_DIR="snippets"
+MARKDOWN_SNIPPETS_FILE="snippets/markdown.json"
 
 mkdir_if_missing() {
     local path="$1"
@@ -136,9 +138,12 @@ sync_cursor_file() {
 
 mkdir_if_missing "$CURSOR_CONFIG_DIR" || exit 1
 mkdir_if_missing "$REPO_CURSOR_DIR" || exit 1
+mkdir_if_missing "$CURSOR_CONFIG_DIR/$SNIPPETS_DIR" || exit 1
+mkdir_if_missing "$REPO_CURSOR_DIR/$SNIPPETS_DIR" || exit 1
 
 sync_cursor_file "$SETTINGS_FILE"
 sync_cursor_file "$KEYBINDINGS_FILE"
+sync_cursor_file "$MARKDOWN_SNIPPETS_FILE"
 
 if $CHECK; then
     echo "Result  : assert_dotfiles check complete"

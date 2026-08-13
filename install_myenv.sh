@@ -142,6 +142,7 @@ required_assert_files_present() {
         "$INSTALL_DIR/assert/assert_dotfiles.sh"
         "$INSTALL_DIR/assert/assert_extensions.sh"
         "$INSTALL_DIR/assert/assert_sublime.sh"
+        "$INSTALL_DIR/assert/assert_onedrive.sh"
     )
     local missing=0
     local path
@@ -269,6 +270,7 @@ else
 fi
 
 run_step "assert_sublime" bash "$INSTALL_DIR/assert/assert_sublime.sh" "${common_args[@]}"
+run_step "assert_onedrive" bash "$INSTALL_DIR/assert/assert_onedrive.sh" "${common_args[@]}"
 
 run_step "assert_xfce4" bash "$INSTALL_DIR/assert/assert_xfce4.sh" "${common_args[@]}" "${XFCE_EXTRA_ARGS[@]}"
 

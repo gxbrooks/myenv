@@ -1,0 +1,7 @@
+{
+  "gspan": {
+    "prefix": "gspan",
+    "body": "<span style=\"color:#008000;\"><em>${TM_SELECTED_TEXT}$0</em></span>",
+    "description": "Green italic highlight. Cursor strips <style> and custom tags such as <gspan>; this expands to the allowed span style (hex color, no spaces)."
+  }
+}

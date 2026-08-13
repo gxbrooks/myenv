@@ -4,7 +4,8 @@
 #
 # Orchestrates: assert_packages.sh (kitty, draw.io, csdm-injector, context-variables .debs),
 # assert_gems.sh (AsciiDoctor PDF/diagram gems), assert_git.sh, assert_bashrc.sh,
-# assert_dotfiles.sh, assert_extensions.sh, assert_sublime.sh, assert_xfce4.sh
+# assert_dotfiles.sh, assert_extensions.sh, assert_sublime.sh, assert_onedrive.sh,
+# assert_xfce4.sh
 # Idempotent and safe to run multiple times.
 #
 # Parameters (CLI flags and values consumed here):
@@ -69,6 +70,7 @@ xfce_assert_script="$script_dir/assert/assert_xfce4.sh"
 dotfiles_assert_script="$script_dir/assert/assert_dotfiles.sh"
 extensions_assert_script="$script_dir/assert/assert_extensions.sh"
 sublime_assert_script="$script_dir/assert/assert_sublime.sh"
+onedrive_assert_script="$script_dir/assert/assert_onedrive.sh"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -220,6 +222,11 @@ fi
 # --- Sublime Text Package Control + Pretty JSON from repo dotfiles/sublime ---
 if ! run_step "assert_sublime" "$sublime_assert_script" "${common_args[@]}"; then
     echo "Warning : assert_sublime step failed"
+fi
+
+# --- OneDrive / SharePoint folders under $HOME (rclone mount) ---
+if ! run_step "assert_onedrive" "$onedrive_assert_script" "${common_args[@]}"; then
+    echo "Warning : assert_onedrive step failed"
 fi
 
 # --- XFCE4 desktop, LightDM, KVM helpers (Ubuntu UI parity across lab hosts) ---

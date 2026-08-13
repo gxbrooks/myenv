@@ -50,7 +50,8 @@ myenv/
 │   ├── assert_amdgpu.sh               # AMD iGPU freeze config; --Check = health report
 │   ├── assert_dotfiles.sh             # Cursor settings/keybindings symlinks
 │   ├── assert_extensions.sh           # Cursor extensions from extensions.txt (skip in CURSOR_AGENT)
-│   └── assert_gems.sh                 # Ruby gems (asciidoctor-pdf, asciidoctor-diagram, rouge)
+│   ├── assert_gems.sh                 # Ruby gems (asciidoctor-pdf, asciidoctor-diagram, rouge)
+│   └── assert_onedrive.sh             # rclone mount OneDrive/SharePoint → $HOME
 ├── diagnose/                          # On-demand diagnose & repair (not run at install by default)
 │   ├── recover_xfce_freeze.sh         # Recover frozen XFCE desktop over SSH (no reboot)
 │   ├── refresh_display_kvm.sh         # Full KVM display recovery (sudo, SSH-friendly)
@@ -140,6 +141,7 @@ Cursor configuration now lives in this repository:
 |---------------------|---|------------|
 | `~/.config/Cursor/User/settings.json` | → | `~/myenv/dotfiles/cursor/settings.json` |
 | `~/.config/Cursor/User/keybindings.json` | → | `~/myenv/dotfiles/cursor/keybindings.json` |
+| `~/.config/Cursor/User/snippets/markdown.json` | → | `~/myenv/dotfiles/cursor/snippets/markdown.json` |
 
 Use:
 - `bash assert/assert_dotfiles.sh` to assert symlinks (or import first-time files)
@@ -150,6 +152,7 @@ Use:
 | Step | Notes |
 |------|--------|
 | `sudo apt install` / `sudo gem install` | Needs a TTY for your sudo password (Agent sandbox often blocks this) |
+| `assert_onedrive.sh` | Needs sudo for rclone (rclone.org binary); Optimiz Microsoft login needs a TTY/browser (skipped in `CURSOR_AGENT`) |
 | `assert_extensions.sh` | Uses `/opt/cursor/usr/share/cursor/bin/cursor` (headless cli.js) via `/usr/local/bin/cursor`; dependency-ordered install waves |
 
 `assert_packages.sh` ensures `/usr/local/bin/cursor` execs the headless CLI script, **not** the Electron binary. The old wrapper (`exec /opt/cursor/.../cursor`) caused a new Cursor window on every `--list-extensions` / `--install-extension` call.
@@ -176,6 +179,36 @@ overwrites an existing `env`), and refreshes `env.example` beside it. Fill in re
 values locally; open a new shell (or `set -a; source ~/.config/csdm-injector/env; set +a`).
 
 Optional overrides: `XDG_CONFIG_HOME`, or set `CSDM_INJECTOR_SRC` when building the `.deb`.
+
+### OneDrive (Optimiz and later accounts)
+
+`assert/assert_onedrive.sh` keeps Microsoft OneDrive folders available under `$HOME` using
+[rclone](https://rclone.org/onedrive/) (`rclone mount` with VFS cache). Ubuntu's `rclone`
+package is too old for current OneDrive Business auth, so the script installs the
+[official rclone.org binary](https://rclone.org/install/).
+
+| Account | Portal | Local folder | rclone remote |
+|---------|--------|--------------|---------------|
+| Optimiz (OneDrive for Business) | https://optimiz-my.sharepoint.com/my | `~/OneDrive-Optimiz` | `onedrive-optimiz:` |
+
+Tokens live in `~/.config/rclone/rclone.conf` (not in git). Each account has its own
+remote and a `systemd --user` unit (`rclone-onedrive-<id>.service`) so a later personal
+OneDrive or another company's tenant can be added without colliding. To add an account,
+append a row to `ONEDRIVE_ACCOUNTS` in `assert/assert_onedrive.sh`.
+
+Microsoft login cannot be fully automated. On an interactive TTY the script opens rclone's
+browser OAuth. From an agent session or cron it installs rclone and prints:
+
+```bash
+rclone config create onedrive-optimiz onedrive config_type=onedrive
+```
+
+Re-run `bash assert/assert_onedrive.sh` after that so the user unit can mount
+`onedrive-optimiz:` on `~/OneDrive-Optimiz`. If rclone's default Azure app is blocked by
+the tenant, set `RCLONE_ONEDRIVE_CLIENT_ID` and `RCLONE_ONEDRIVE_CLIENT_SECRET` to a
+tenant-approved app and re-run.
+
+The script removes leftover abraunegg `onedrive` units/config if they are present.
 
 ### AsciiDoc and PlantUML (documentation builds)
 
