@@ -30,5 +30,14 @@
     "asciidoctor-diagram"
   ],
   "window.autoDetectColorScheme": false,
-  "cursor.cpp.enablePartialAccepts": true
+  "cursor.cpp.enablePartialAccepts": true,
+  "cSpell.userWords": [
+    "ITIL",
+    "TBAC",
+    "xrefstyle"
+  ],
+  "security.promptForLocalFileProtocolHandling": false,
+  "terminal.integrated.env.linux": {
+    "PATH": "${env:HOME}/.local/bin:${env:PATH}"
+  }
 }

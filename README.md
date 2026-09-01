@@ -45,7 +45,7 @@ This project provides a complete XFCE4 desktop environment configuration with KV
 myenv/
 ├── README.md
 ├── assert/                            # Idempotent setup scripts (run via assert_myenv.sh)
-│   ├── assert_packages.sh             # apt packages, Cursor, draw.io, csdm-injector, context-variables
+│   ├── assert_packages.sh             # apt packages, Cursor, Claude Code, Claude Desktop, draw.io, csdm-injector, context-variables
 │   ├── assert_xfce4.sh                # XFCE4/LightDM/KVM desktop assert
 │   ├── assert_amdgpu.sh               # AMD iGPU freeze config; --Check = health report
 │   ├── assert_dotfiles.sh             # Cursor settings/keybindings symlinks
@@ -59,7 +59,8 @@ myenv/
 │   ├── wake_on_kvm.sh                 # KVM persistence (sleep/USB/HDMI); run by assert_xfce4
 │   └── diagnose_hdmi_audio.sh         # HDMI audio sinks / optional --set-hdmi
 ├── xfce/                              # XFCE config only
-│   └── myenv-kitty.desktop            # Kitty panel launcher desktop entry
+│   ├── myenv-kitty.desktop            # Kitty panel launcher desktop entry
+│   └── claude-code.desktop            # Standalone Claude Code launcher (kitty)
 ├── kitty/                             # Kitty config only
 │   └── kitty.conf
 ├── docs/
@@ -160,6 +161,28 @@ Use:
 The Agent sets `CURSOR_AGENT` in the shell; `assert_myenv.sh` skips extension install during agent sessions. Run full assert from kitty when sudo or extension sync is required.
 
 See [Cursor terminal / sandbox docs](https://cursor.com/docs/agent/tools/terminal) if the Agent reports sandbox restrictions.
+
+### Claude (Claude Pro)
+
+`assert_packages.sh` installs both Anthropic clients that a **Claude Pro** (or Max / Team / Enterprise) account unlocks:
+
+| Client | How myenv installs it | How to run it |
+|--------|------------------------|---------------|
+| **Claude Desktop** | Anthropic’s signed **stable** apt repo (`claude-desktop`) | XFCE menu → **Claude**, or `claude-desktop` |
+| **Claude Code CLI** | Native installer → `~/.local/bin/claude` (no sudo, auto-updates) | `claude` in kitty or Cursor’s integrated terminal; XFCE menu → **Claude Code** |
+
+`~/.local/bin` is added to `PATH` in this repo’s `.bashrc` (Cursor terminals often skip `~/.profile`) and in `dotfiles/cursor/settings.json` (`terminal.integrated.env.linux`). Cowork in the desktop app needs the `kvm` group; assert adds your user when the package is present (log out and back in once).
+
+The free Claude.ai plan does not include Claude Code. Login is interactive and is **not** automated: after install, sign in with your Claude Pro account.
+
+```bash
+claude-desktop      # GUI: Chat, Cowork, Claude Code — sign in on first launch
+claude auth login   # CLI: browser OAuth with Claude Pro (once)
+claude              # CLI session (also prompts to log in if needed)
+claude doctor       # read-only CLI install / settings check
+```
+
+Credentials for the CLI stay in `~/.claude/.credentials.json` (mode `0600`, not in git). Desktop stores its own login in the app.
 
 ### csdm-injector credentials (local env — not in git)
 

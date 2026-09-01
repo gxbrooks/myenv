@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Claude Code
+Comment=Claude Code agent (Claude Pro)
+Exec=/usr/bin/kitty -e /bin/bash -lc claude
+Icon=utilities-terminal
+Terminal=false
+Categories=Development;Utility;
+StartupNotify=true
+Keywords=claude;anthropic;agent;

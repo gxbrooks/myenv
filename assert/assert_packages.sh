@@ -1,7 +1,7 @@
 #!/bin/bash
 #
-# Assert MyEnv — apt repos, packages, Cursor (AppImage), draw.io desktop (.deb),
-# csdm-injector and context-variables (.deb via apt).
+# Assert MyEnv — apt repos, packages, Cursor (AppImage), Claude Code (native),
+# Claude Desktop (apt), draw.io desktop (.deb), csdm-injector and context-variables (.deb via apt).
 # Idempotent. Invoked by assert_myenv.sh or run standalone.
 #
 # Usage: assert_packages.sh [--Debug|-d] [--Check|-c]
@@ -116,6 +116,228 @@ verify_docs_toolchain() {
     return 0
 }
 
+is_claude_installed() {
+    [[ -x "${HOME}/.local/bin/claude" ]] || command -v claude >/dev/null 2>&1
+}
+
+# Claude Code (Anthropic) — native installer → ~/.local/bin/claude (no sudo).
+# Official: https://code.claude.com/docs/en/install
+# Claude Pro / Max / Team / Enterprise / Console login is interactive (run `claude`).
+install_claude_code() {
+    local ver tmp_installer
+
+    if is_claude_installed; then
+        ver="$(claude --version 2>/dev/null | head -1 || echo 'claude')"
+        if $CHECK; then
+            echo "Check   : Claude Code already installed ($ver)"
+        else
+            $DEBUG && echo "Debug   : Claude Code already installed ($ver)"
+            echo "✓ Claude Code is already installed ($ver)"
+        fi
+        return 0
+    fi
+
+    if $CHECK; then
+        echo "Check   : Would install Claude Code (native installer → ~/.local/bin/claude)"
+        return 1
+    fi
+
+    echo "Info    : Installing Claude Code (native installer)"
+
+    if ! command -v curl >/dev/null 2>&1; then
+        echo "Info    : Installing curl (required for Claude Code download)"
+        sudo apt install -y curl || {
+            echo "Error   : Failed to install curl"
+            return 1
+        }
+    fi
+
+    tmp_installer="$(mktemp /tmp/claude-install_XXXXXX.sh)"
+    if ! curl -fsSL https://claude.ai/install.sh -o "$tmp_installer"; then
+        echo "Error   : Failed to download Claude Code installer"
+        rm -f "$tmp_installer"
+        return 1
+    fi
+    if ! bash "$tmp_installer"; then
+        echo "Error   : Claude Code installer failed"
+        rm -f "$tmp_installer"
+        return 1
+    fi
+    rm -f "$tmp_installer"
+
+    # Native installer may have placed the binary without updating this shell's PATH.
+    if [[ -x "${HOME}/.local/bin/claude" ]] && ! command -v claude >/dev/null 2>&1; then
+        PATH="${HOME}/.local/bin:${PATH}"
+        export PATH
+    fi
+
+    if is_claude_installed; then
+        ver="$(claude --version 2>/dev/null | head -1 || echo 'claude')"
+        echo "Result  : Successfully installed Claude Code ($ver)"
+        echo "Info    : First run: claude  (browser login with Claude Pro)"
+        return 0
+    fi
+
+    echo "Error   : Claude Code installer ran but claude was not found in ~/.local/bin or PATH"
+    return 1
+}
+
+# XFCE / menu launcher so Claude Code can run as a standalone agent in kitty.
+ensure_claude_code_desktop() {
+    local src
+    src="$(cd "$script_dir/.." && pwd)/xfce/claude-code.desktop"
+    local dst_dir="$HOME/.local/share/applications"
+    local dst="$dst_dir/claude-code.desktop"
+
+    if [[ ! -f "$src" ]]; then
+        $DEBUG && echo "Debug   : Claude Code desktop entry not found at $src"
+        return 0
+    fi
+
+    if $CHECK; then
+        if [[ -f "$dst" ]] && cmp -s "$src" "$dst"; then
+            echo "Check   : Claude Code desktop launcher already installed"
+        else
+            echo "Check   : Would install Claude Code desktop launcher → $dst"
+        fi
+        return 0
+    fi
+
+    mkdir -p "$dst_dir"
+    if [[ -f "$dst" ]] && cmp -s "$src" "$dst"; then
+        $DEBUG && echo "Debug   : Claude Code desktop launcher already current"
+        return 0
+    fi
+
+    cp -f "$src" "$dst"
+    chmod 644 "$dst"
+    update-desktop-database "$dst_dir" 2>/dev/null || true
+    echo "Result  : Claude Code desktop launcher installed ($dst)"
+}
+
+# Claude Desktop (Claude Pro GUI) — signed apt repo, stable channel.
+# Official: https://code.claude.com/docs/en/desktop-linux
+# Signing-key fingerprint: 31DD DE24 DDFA B679 F42D 7BD2 BAA9 29FF 1A7E CACE
+CLAUDE_DESKTOP_KEY_URL="https://downloads.claude.ai/claude-desktop/key.asc"
+CLAUDE_DESKTOP_KEYRING="/usr/share/keyrings/claude-desktop-archive-keyring.asc"
+CLAUDE_DESKTOP_LIST="/etc/apt/sources.list.d/claude-desktop.list"
+CLAUDE_DESKTOP_FINGERPRINT="31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE"
+CLAUDE_DESKTOP_DEB_LINE="deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/claude-desktop-archive-keyring.asc] https://downloads.claude.ai/claude-desktop/apt/stable stable main"
+
+gpg_fingerprint_of() {
+    local keyfile="$1"
+    gpg --show-keys --with-colons "$keyfile" 2>/dev/null \
+        | awk -F: '/^fpr:/{print $10; exit}'
+}
+
+ensure_claude_desktop_repo() {
+    local tmp_key actual_fpr
+
+    if $CHECK; then
+        if [[ -f "$CLAUDE_DESKTOP_LIST" && -f "$CLAUDE_DESKTOP_KEYRING" ]]; then
+            echo "Check   : Claude Desktop apt repository already configured"
+        else
+            echo "Check   : Would add Claude Desktop apt repository (stable) and install signing key"
+        fi
+        return 0
+    fi
+
+    if ! command -v gpg >/dev/null 2>&1; then
+        echo "Info    : Installing gnupg (required to verify the Claude Desktop signing key)"
+        sudo apt install -y gnupg || {
+            echo "Error   : Failed to install gnupg"
+            return 1
+        }
+    fi
+
+    if ! command -v curl >/dev/null 2>&1; then
+        echo "Info    : Installing curl (required to download the Claude Desktop signing key)"
+        sudo apt install -y curl || {
+            echo "Error   : Failed to install curl"
+            return 1
+        }
+    fi
+
+    actual_fpr=""
+    if [[ -f "$CLAUDE_DESKTOP_KEYRING" ]]; then
+        actual_fpr="$(gpg_fingerprint_of "$CLAUDE_DESKTOP_KEYRING")"
+    fi
+
+    if [[ "$actual_fpr" != "$CLAUDE_DESKTOP_FINGERPRINT" ]]; then
+        tmp_key="$(mktemp /tmp/claude-desktop-key_XXXXXX.asc)"
+        echo "Info    : Downloading Claude Desktop signing key"
+        if ! curl -fsSL "$CLAUDE_DESKTOP_KEY_URL" -o "$tmp_key"; then
+            echo "Error   : Failed to download Claude Desktop signing key from $CLAUDE_DESKTOP_KEY_URL"
+            rm -f "$tmp_key"
+            return 1
+        fi
+        actual_fpr="$(gpg_fingerprint_of "$tmp_key")"
+        if [[ "$actual_fpr" != "$CLAUDE_DESKTOP_FINGERPRINT" ]]; then
+            echo "Error   : Claude Desktop signing key fingerprint mismatch (got ${actual_fpr:-empty}, expected $CLAUDE_DESKTOP_FINGERPRINT)"
+            rm -f "$tmp_key"
+            return 1
+        fi
+        if ! sudo install -d -m 0755 /usr/share/keyrings; then
+            echo "Error   : Failed to create /usr/share/keyrings (sudo required)"
+            rm -f "$tmp_key"
+            return 1
+        fi
+        if ! sudo install -m 0644 "$tmp_key" "$CLAUDE_DESKTOP_KEYRING"; then
+            echo "Error   : Failed to install Claude Desktop signing key (sudo required)"
+            rm -f "$tmp_key"
+            return 1
+        fi
+        rm -f "$tmp_key"
+        echo "Result  : Claude Desktop signing key installed ($CLAUDE_DESKTOP_KEYRING)"
+    else
+        $DEBUG && echo "Debug   : Claude Desktop signing key already present and matches fingerprint"
+    fi
+
+    if [[ -f "$CLAUDE_DESKTOP_LIST" ]] \
+        && grep -qF "downloads.claude.ai/claude-desktop/apt/stable" "$CLAUDE_DESKTOP_LIST"; then
+        $DEBUG && echo "Debug   : Claude Desktop repository already configured"
+    else
+        echo "Info    : Adding Claude Desktop apt repository (stable)"
+        if ! echo "$CLAUDE_DESKTOP_DEB_LINE" | sudo tee "$CLAUDE_DESKTOP_LIST" > /dev/null; then
+            echo "Error   : Failed to add Claude Desktop apt repository (sudo required)"
+            return 1
+        fi
+        echo "Result  : Claude Desktop repository added"
+    fi
+    return 0
+}
+
+# Cowork (Claude Desktop agent tab) needs kvm group for /dev/kvm and /dev/vhost-vsock.
+ensure_claude_kvm_group() {
+    local user="${SUDO_USER:-$USER}"
+
+    if id -nG "$user" 2>/dev/null | grep -qw kvm; then
+        $DEBUG && echo "Debug   : $user is already in the kvm group"
+        if $CHECK; then
+            echo "Check   : $user already in kvm group (Claude Cowork)"
+        fi
+        return 0
+    fi
+
+    if $CHECK; then
+        echo "Check   : Would add $user to kvm group (Claude Desktop Cowork)"
+        return 0
+    fi
+
+    if ! getent group kvm >/dev/null 2>&1; then
+        echo "Warning : kvm group not present; skip usermod (install qemu/kvm packages first)"
+        return 0
+    fi
+
+    echo "Info    : Adding $user to kvm group (Claude Desktop Cowork)"
+    if sudo usermod -aG kvm "$user"; then
+        echo "Result  : Added $user to kvm group — log out and back in for Cowork"
+        return 0
+    fi
+    echo "Warning : Could not add $user to kvm group (sudo required)"
+    return 1
+}
+
 setup_external_repos() {
     if [[ ! -f /etc/apt/sources.list.d/sublime-text.list ]]; then
         if $CHECK; then
@@ -147,6 +369,10 @@ setup_external_repos() {
         fi
     else
         $DEBUG && echo "Debug   : Google Chrome repository already configured"
+    fi
+
+    if ! ensure_claude_desktop_repo; then
+        echo "Warning : Claude Desktop apt repository setup failed"
     fi
 
     if ! $CHECK; then
@@ -704,7 +930,7 @@ ensure_kitty_default_terminal() {
     return 1
 }
 
-EXTERNAL_REPO_PACKAGES=(sublime-text google-chrome-stable)
+EXTERNAL_REPO_PACKAGES=(sublime-text google-chrome-stable claude-desktop)
 STANDARD_PACKAGES=(kitty kitty-terminfo gnome-keyring libsecret-1-0 seahorse gh openssh-client keychain okular xfce4-screenshooter libreoffice)
 DOCS_PACKAGES=(asciidoctor ruby-rubygems graphviz plantuml)
 NETWORK_PACKAGES=(nmap speedtest-cli)
@@ -763,6 +989,24 @@ fi
 
 ensure_kitty_default_terminal || true
 
+if ! install_claude_code; then
+    if ! $CHECK; then
+        FAILED_COUNT=$((FAILED_COUNT + 1))
+        FAILED_STEPS+=("tool:claude-code")
+        echo "Warning : Claude Code installation step failed"
+    fi
+fi
+
+if $CHECK || is_claude_installed; then
+    ensure_claude_code_desktop
+else
+    $DEBUG && echo "Debug   : Skipping Claude Code desktop launcher (claude not installed)"
+fi
+
+if is_package_installed claude-desktop || $CHECK; then
+    ensure_claude_kvm_group || true
+fi
+
 if $CHECK; then
     echo "Check   : Would install packages/tools as needed (assert_packages)"
     echo "Result  : assert_packages check complete"
@@ -810,6 +1054,18 @@ if ! $CHECK; then
         $DEBUG && echo "Debug   : ✓ context-variables is installed ($(dpkg-query -W -f='${Version}' context-variables) → $(command -v generate-contexts))"
     else
         echo "Warning : context-variables (generate-contexts) installation verification failed"
+    fi
+    if is_claude_installed; then
+        $DEBUG && echo "Debug   : ✓ Claude Code is installed ($(claude --version 2>&1 | head -1 || echo 'claude') → $(command -v claude 2>/dev/null || echo "${HOME}/.local/bin/claude"))"
+    else
+        echo "Warning : Claude Code (claude) installation verification failed"
+    fi
+    if is_package_installed claude-desktop && command -v claude-desktop >/dev/null 2>&1; then
+        $DEBUG && echo "Debug   : ✓ claude-desktop is installed ($(dpkg-query -W -f='${Version}' claude-desktop) → $(command -v claude-desktop))"
+    elif is_package_installed claude-desktop; then
+        $DEBUG && echo "Debug   : ✓ claude-desktop package is installed ($(dpkg-query -W -f='${Version}' claude-desktop))"
+    else
+        echo "Warning : Claude Desktop (claude-desktop) installation verification failed"
     fi
     if [[ -x /usr/bin/kitty ]]; then
         cur=$(readlink -f /etc/alternatives/x-terminal-emulator 2>/dev/null || true)

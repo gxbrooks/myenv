@@ -2,7 +2,7 @@
 
 # Assert MyEnv Personal Environment
 #
-# Orchestrates: assert_packages.sh (kitty, draw.io, csdm-injector, context-variables .debs),
+# Orchestrates: assert_packages.sh (kitty, Claude Code, Claude Desktop, draw.io, csdm-injector, context-variables .debs),
 # assert_gems.sh (AsciiDoctor PDF/diagram gems), assert_git.sh, assert_bashrc.sh,
 # assert_dotfiles.sh, assert_extensions.sh, assert_sublime.sh, assert_onedrive.sh,
 # assert_xfce4.sh

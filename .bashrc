@@ -1,5 +1,14 @@
 # myenv — personal shell hooks (native Linux). Sourced from ~/.bashrc (see assert_myenv.sh).
 
+# User-local binaries (Claude Code native installer and other ~/.local installs).
+# Interactive Cursor terminals often skip ~/.profile, so this is needed there too.
+if [ -d "$HOME/.local/bin" ]; then
+  case ":$PATH:" in
+    *":$HOME/.local/bin:"*) ;;
+    *) PATH="$HOME/.local/bin:$PATH" ;;
+  esac
+fi
+
 # csdm-injector — load local secrets (XDG). File is never in the myenv git tree.
 # Create/seed via assert_bashrc.sh → ~/.config/csdm-injector/env (mode 0600).
 _csdm_env="${XDG_CONFIG_HOME:-$HOME/.config}/csdm-injector/env"
