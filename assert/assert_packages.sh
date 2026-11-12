@@ -1,7 +1,8 @@
 #!/bin/bash
 #
 # Assert MyEnv — apt repos, packages, Cursor (AppImage), Claude Code (native),
-# Claude Desktop (apt), draw.io desktop (.deb), csdm-injector and context-variables (.deb via apt).
+# Claude Desktop (apt), draw.io desktop (.deb), DuckDB (CLI binary + Python binding),
+# csdm-injector and context-variables (.deb via apt).
 # Idempotent. Invoked by assert_myenv.sh or run standalone.
 #
 # Usage: assert_packages.sh [--Debug|-d] [--Check|-c]
@@ -619,6 +620,138 @@ install_drawio() {
     return 1
 }
 
+is_duckdb_cli_installed() {
+    command -v duckdb >/dev/null 2>&1
+}
+
+# DuckDB CLI — official binary tarball from duckdb/duckdb GitHub releases (not in Ubuntu apt).
+# Installed to ~/.local/bin (no sudo; same placement as install_claude_code below) to provide
+# duckdb for ad-hoc querying of the CMDB/CSDM .duckdb databases.
+install_duckdb_cli() {
+    if is_duckdb_cli_installed; then
+        $DEBUG && echo "Debug   : DuckDB CLI already installed ($(command -v duckdb))"
+        return 0
+    fi
+
+    if $CHECK; then
+        echo "Check   : Would install DuckDB CLI (binary tarball from GitHub releases)"
+        return 1
+    fi
+
+    echo "Info    : Installing DuckDB CLI"
+
+    if ! command -v curl &>/dev/null; then
+        echo "Info    : Installing curl (required for DuckDB download)"
+        sudo apt install -y curl || {
+            echo "Error   : Failed to install curl"
+            return 1
+        }
+    fi
+
+    if ! command -v jq &>/dev/null; then
+        echo "Info    : Installing jq (required to parse DuckDB release API)"
+        sudo apt install -y jq || {
+            echo "Error   : Failed to install jq"
+            return 1
+        }
+    fi
+
+    local api_url="https://api.github.com/repos/duckdb/duckdb/releases/latest"
+    $DEBUG && echo "Debug   : Fetching DuckDB release from GitHub API"
+
+    local tar_url
+    tar_url=$(curl -fsSL "$api_url" | jq -r '.assets[] | select(.name == "duckdb-cli-linux-amd64.tar.gz") | .browser_download_url')
+
+    if [[ -z "$tar_url" || "$tar_url" == "null" ]]; then
+        echo "Error   : Failed to resolve DuckDB CLI download URL from GitHub releases"
+        return 1
+    fi
+
+    $DEBUG && echo "Debug   : DuckDB CLI download URL: $tar_url"
+
+    local tmp_tar tmp_extract_dir
+    tmp_tar=$(mktemp /tmp/duckdb-cli_XXXXXX.tar.gz)
+    curl -fsSL -L "$tar_url" -o "$tmp_tar" || {
+        echo "Error   : Failed to download DuckDB CLI tarball"
+        rm -f "$tmp_tar"
+        return 1
+    }
+
+    tmp_extract_dir=$(mktemp -d /tmp/duckdb-cli_extract_XXXXXX)
+    if ! tar -xzf "$tmp_tar" -C "$tmp_extract_dir" || [[ ! -f "$tmp_extract_dir/duckdb" ]]; then
+        echo "Error   : Failed to extract DuckDB CLI tarball"
+        rm -f "$tmp_tar"
+        rm -rf "$tmp_extract_dir"
+        return 1
+    fi
+
+    mkdir -p "${HOME}/.local/bin"
+    install -m 0755 "$tmp_extract_dir/duckdb" "${HOME}/.local/bin/duckdb"
+    rm -f "$tmp_tar"
+    rm -rf "$tmp_extract_dir"
+
+    # Native installer may have placed the binary without updating this shell's PATH.
+    if [[ -x "${HOME}/.local/bin/duckdb" ]] && ! command -v duckdb >/dev/null 2>&1; then
+        PATH="${HOME}/.local/bin:${PATH}"
+        export PATH
+    fi
+
+    if is_duckdb_cli_installed; then
+        echo "Result  : Successfully installed DuckDB CLI ($(duckdb --version 2>&1 | head -1))"
+        return 0
+    fi
+
+    echo "Error   : DuckDB CLI installed but duckdb command not found in PATH"
+    return 1
+}
+
+# Pin to the system interpreter (not whatever python3/pip3 a venv has put first on PATH) so
+# the install target and the "is it installed" check always agree, venv active or not.
+SYSTEM_PYTHON3="/usr/bin/python3"
+[[ -x "$SYSTEM_PYTHON3" ]] || SYSTEM_PYTHON3="python3"
+
+is_duckdb_python_installed() {
+    "$SYSTEM_PYTHON3" -c "import duckdb" >/dev/null 2>&1
+}
+
+# DuckDB Python binding — not packaged in apt; system python3 is PEP 668 externally-managed,
+# so install with --break-system-packages (the explicit opt-in that policy requires).
+# Used by cmdb_reports.py / csdm_reports.py (see ~/cmdb_reporting.md).
+install_duckdb_python() {
+    if is_duckdb_python_installed; then
+        $DEBUG && echo "Debug   : DuckDB Python binding already installed"
+        return 0
+    fi
+
+    if $CHECK; then
+        echo "Check   : Would install DuckDB Python binding ($SYSTEM_PYTHON3 -m pip install --user duckdb)"
+        return 1
+    fi
+
+    echo "Info    : Installing DuckDB Python binding"
+
+    if ! "$SYSTEM_PYTHON3" -m pip --version &>/dev/null; then
+        echo "Info    : Installing python3-pip (required for DuckDB Python binding)"
+        sudo apt install -y python3-pip || {
+            echo "Error   : Failed to install python3-pip"
+            return 1
+        }
+    fi
+
+    if ! "$SYSTEM_PYTHON3" -m pip install --user --break-system-packages duckdb; then
+        echo "Error   : Failed to pip-install duckdb"
+        return 1
+    fi
+
+    if is_duckdb_python_installed; then
+        echo "Result  : Successfully installed DuckDB Python binding ($("$SYSTEM_PYTHON3" -c 'import duckdb; print(duckdb.__version__)'))"
+        return 0
+    fi
+
+    echo "Error   : DuckDB Python binding installed but import still fails"
+    return 1
+}
+
 is_csdm_injector_installed() {
     is_package_installed csdm-injector && command -v csdm-inject >/dev/null 2>&1
 }
@@ -971,6 +1104,22 @@ if ! install_drawio; then
     fi
 fi
 
+if ! install_duckdb_cli; then
+    if ! $CHECK; then
+        FAILED_COUNT=$((FAILED_COUNT + 1))
+        FAILED_STEPS+=("tool:duckdb-cli")
+        echo "Warning : DuckDB CLI installation step failed"
+    fi
+fi
+
+if ! install_duckdb_python; then
+    if ! $CHECK; then
+        FAILED_COUNT=$((FAILED_COUNT + 1))
+        FAILED_STEPS+=("tool:duckdb-python")
+        echo "Warning : DuckDB Python binding installation step failed"
+    fi
+fi
+
 if ! install_csdm_injector; then
     if ! $CHECK; then
         FAILED_COUNT=$((FAILED_COUNT + 1))
@@ -1044,6 +1193,16 @@ if ! $CHECK; then
         $DEBUG && echo "Debug   : ✓ drawio is installed ($(drawio --version 2>&1 | head -1 || echo 'drawio'))"
     else
         echo "Warning : draw.io desktop (drawio) installation verification failed"
+    fi
+    if is_duckdb_cli_installed; then
+        $DEBUG && echo "Debug   : ✓ duckdb CLI is installed ($(duckdb --version 2>&1 | head -1))"
+    else
+        echo "Warning : DuckDB CLI (duckdb) installation verification failed"
+    fi
+    if is_duckdb_python_installed; then
+        $DEBUG && echo "Debug   : ✓ duckdb Python binding is installed ($("$SYSTEM_PYTHON3" -c 'import duckdb; print(duckdb.__version__)'))"
+    else
+        echo "Warning : DuckDB Python binding installation verification failed"
     fi
     if is_csdm_injector_installed; then
         $DEBUG && echo "Debug   : ✓ csdm-injector is installed ($(dpkg-query -W -f='${Version}' csdm-injector) → $(command -v csdm-inject))"

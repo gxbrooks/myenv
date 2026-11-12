@@ -45,7 +45,7 @@ This project provides a complete XFCE4 desktop environment configuration with KV
 myenv/
 ├── README.md
 ├── assert/                            # Idempotent setup scripts (run via assert_myenv.sh)
-│   ├── assert_packages.sh             # apt packages, Cursor, Claude Code, Claude Desktop, draw.io, csdm-injector, context-variables
+│   ├── assert_packages.sh             # apt packages, Cursor, Claude Code, Claude Desktop, draw.io, DuckDB, csdm-injector, context-variables
 │   ├── assert_xfce4.sh                # XFCE4/LightDM/KVM desktop assert
 │   ├── assert_amdgpu.sh               # AMD iGPU freeze config; --Check = health report
 │   ├── assert_dotfiles.sh             # Cursor settings/keybindings symlinks
@@ -243,6 +243,14 @@ After `assert_myenv.sh`, build a document from its directory:
 asciidoctor -r asciidoctor-diagram -a toc=left -a sectnums doc.adoc
 asciidoctor-pdf -r asciidoctor-diagram doc.adoc
 ```
+
+### DuckDB
+
+`assert_packages.sh` also installs **DuckDB**: the `duckdb` CLI (official binary tarball from
+[duckdb/duckdb](https://github.com/duckdb/duckdb) GitHub releases, installed to `/usr/local/bin/duckdb`) and
+the Python binding (`pip3 install --user --break-system-packages duckdb`, since system `python3` is PEP
+668 externally-managed). Used for the CMDB/CSDM reporting scripts (see `~/cmdb_reporting.md` and the
+`cmdb-analysis` repo).
 
 ## How It Works
 
