@@ -6,8 +6,12 @@
 #   Installs XFCE4/LightDM and related packages, sets them as the defaults, links the
 #   repo dotfiles (~/.xprofile, autostart, kitty.conf, .xscreensaver), places the Kitty
 #   panel launcher, installs the KVM helpers, and delegates all AMD iGPU freeze mitigation
-#   to assert/assert_amdgpu.sh. Idempotent. Lives in assert/; invoked by assert_myenv.sh
-#   (or install_myenv.sh) or run standalone. The repo root is the parent of assert/.
+#   to assert/assert_amdgpu.sh. Also asserts the xscreensaver daemon is actually running
+#   and responsive for the current graphical session (not just installed) — a package
+#   install does not retroactively start the daemon in a session that predates it; only
+#   the autostart entry does, and only at the next login. Idempotent. Lives in assert/;
+#   invoked by assert_myenv.sh (or install_myenv.sh) or run standalone. The repo root is
+#   the parent of assert/.
 #
 # USAGE
 #   assert_xfce4.sh [--Debug|-d] [--Check|-c] [--restart-lightdm|-r] [--no-restart-lightdm]
@@ -592,6 +596,41 @@ else
 fi
 
 #############################################
+# 6a. Assert the xscreensaver daemon is actually running (current session)
+#############################################
+# Package install/symlink above only ensures xscreensaver CAN run; a session that was
+# already active before the package existed never got it autostarted, and nothing else
+# in this script would notice. Verify liveness via xscreensaver-command (talks to the
+# daemon over the X display), and start it if unresponsive.
+echo "🔧 Checking xscreensaver daemon is running..."
+if [[ -z "${DISPLAY:-}" ]]; then
+    echo "⚠️  No DISPLAY in this shell; skipping xscreensaver daemon check (run interactively in the GUI session, or log in once, to verify/start it)"
+elif ! command -v xscreensaver-command >/dev/null 2>&1; then
+    echo "⚠️  xscreensaver-command not in PATH; skipping daemon check"
+else
+    if xscreensaver-command -time >/dev/null 2>&1; then
+        echo "✓ xscreensaver daemon is running and responsive"
+    else
+        if $CHECK; then
+            echo "Check   : xscreensaver daemon not responding; would run: xscreensaver -no-splash &"
+        else
+            echo "→ xscreensaver daemon not running; starting it for this session"
+            nohup xscreensaver -no-splash >/dev/null 2>&1 &
+            disown
+            for _ in 1 2 3 4 5; do
+                sleep 1
+                xscreensaver-command -time >/dev/null 2>&1 && break
+            done
+            if xscreensaver-command -time >/dev/null 2>&1; then
+                echo "✓ xscreensaver daemon started and responding"
+            else
+                echo "⚠️  Started xscreensaver but it is not responding to xscreensaver-command; check manually"
+            fi
+        fi
+    fi
+fi
+
+#############################################
 # 7. Install refresh_display_kvm.sh to /usr/local/bin
 #############################################
 echo "🔧 Installing refresh_display_kvm.sh to /usr/local/bin..."
@@ -733,7 +772,7 @@ echo ""
 if $CHECK; then
     echo "✅ assert_xfce4 check complete (no changes applied)"
     echo ""
-    echo "Summary (dry-run): would ensure XFCE4/LightDM packages, session defaults, repo symlinks, Kitty config, Kitty panel launcher, AMD GPU freeze mitigations (via assert/assert_amdgpu.sh), diagnose/ helpers, KVM persistence."
+    echo "Summary (dry-run): would ensure XFCE4/LightDM packages, session defaults, repo symlinks, Kitty config, Kitty panel launcher, xscreensaver daemon running, AMD GPU freeze mitigations (via assert/assert_amdgpu.sh), diagnose/ helpers, KVM persistence."
     if [[ "$NEEDS_REBOOT" == "true" ]]; then
         echo "Check   : After a live run, LightDM restart would apply the new display manager and session."
     fi
@@ -765,6 +804,7 @@ echo "  • AMD iGPU freeze mitigations applied via assert/assert_amdgpu.sh (fir
 $SUPPRESS_VOLMAN_NOISE && echo "  • thunar-volman automount disabled (KVM USB log-spam suppressed)"
 echo "  • recover_xfce_freeze.sh + escalate_xfce_freeze.sh + assert_amdgpu.sh installed to /usr/local/bin"
 echo "  • ~/.xscreensaver → $PROJECT_DIR/.xscreensaver"
+echo "  • xscreensaver daemon verified running (started it for this session if it wasn't)"
 echo "  • refresh_display_kvm.sh installed to /usr/local/bin"
 echo "  • KVM switch persistence configured (wake_on_kvm.sh)"
 echo ""
