@@ -51,7 +51,8 @@ myenv/
 │   ├── assert_dotfiles.sh             # Cursor settings/keybindings symlinks
 │   ├── assert_extensions.sh           # Cursor extensions from extensions.txt (skip in CURSOR_AGENT)
 │   ├── assert_gems.sh                 # Ruby gems (asciidoctor-pdf, asciidoctor-diagram, rouge)
-│   └── assert_onedrive.sh             # rclone mount OneDrive/SharePoint → $HOME
+│   ├── assert_onedrive.sh             # rclone mount OneDrive/SharePoint → $HOME
+│   └── assertTailscale.sh             # Join tailnet (lab nodes only — standalone, not run by assert_myenv.sh)
 ├── diagnose/                          # On-demand diagnose & repair (not run at install by default)
 │   ├── recover_xfce_freeze.sh         # Recover frozen XFCE desktop over SSH (no reboot)
 │   ├── refresh_display_kvm.sh         # Full KVM display recovery (sudo, SSH-friendly)
@@ -202,6 +203,102 @@ overwrites an existing `env`), and refreshes `env.example` beside it. Fill in re
 values locally; open a new shell (or `set -a; source ~/.config/csdm-injector/env; set +a`).
 
 Optional overrides: `XDG_CONFIG_HOME`, or set `CSDM_INJECTOR_SRC` when building the `.deb`.
+
+### Tailscale (mesh VPN for lab nodes)
+
+`assert/assertTailscale.sh` installs [Tailscale](https://tailscale.com/) via the official
+installer (`curl -fsSL https://tailscale.com/install.sh | sh` — it already detects the
+host distro, so this script doesn't assume one), joins the tailnet non-interactively with
+a reusable auth key, and verifies the node is actually connected before exiting
+successfully. It's idempotent (safe to re-run; won't reinstall or re-join if already
+connected) and does **not** enable Tailscale SSH — existing SSH keys and the `ssh/config`
+host aliases in `spark-observability` keep working; this only puts the node on the
+tailnet so it's reachable without port forwarding or dynamic DNS.
+
+This is standalone and lab-node-specific — unlike the rest of `assert/`, it is **not**
+wired into `assert_myenv.sh`, since not every machine that clones this repo (e.g. a
+personal laptop) should auto-join the tailnet. Run it explicitly on each of Lab1, Lab2,
+and Lab3.
+
+**1. Generate a reusable auth key** (Tailscale admin console → **Settings > Keys** →
+*Generate auth key*):
+- Check **Reusable** so one key can join all three lab nodes.
+- Set an **expiry** (e.g. 90 days) rather than "no expiry".
+- Under **Tags**, select `tag:homelab` (or your own tag) so the key is scoped to admin
+  the nodes you intend — this also requires `tag:homelab` to exist in the tailnet's ACL
+  policy (`Access Controls`), e.g.:
+  ```json
+  "tagOwners": {
+    "tag:homelab": ["autogroup:admin"],
+  },
+  ```
+- Keys can be revoked any time from the same **Settings > Keys** page.
+
+**2. Put the key on each node** — either:
+
+| Practice | Choice here |
+|----------|-------------|
+| Location | XDG config: `~/.config/tailscale/env` |
+| Permissions | directory `0700`, file `0600` |
+| Format | shell `KEY=value` (dotenv) |
+| Template | `dotfiles/tailscale/env.example` (placeholder only) |
+
+```bash
+mkdir -p -m 700 ~/.config/tailscale
+cp myenv/dotfiles/tailscale/env.example ~/.config/tailscale/env
+chmod 600 ~/.config/tailscale/env
+# edit ~/.config/tailscale/env and set TAILSCALE_AUTHKEY=...
+```
+
+or export `TAILSCALE_AUTHKEY` in the shell that runs the script (e.g. for a one-off,
+non-persistent run). The environment variable takes priority over the secrets file.
+
+**3. Run it.** If you're on the node locally and your user has (passwordless) sudo, just:
+
+```bash
+bash ~/myenv/assert/assertTailscale.sh --Debug
+```
+
+**On the lab nodes specifically**, run it as `ansible` (per `spark-observability/ansible/inventory.yml`
+and `linux/docs/Initialize_Managed_Node.md`), not `gxbrooks` — `gxbrooks` is the dev account and does
+*not* have passwordless sudo on these nodes, so a local `bash assert/assertTailscale.sh` run as
+`gxbrooks` fails at the first `sudo` call. `ansible` does have it, but its home directory has no
+read access into `gxbrooks`'s `~/repos/myenv` checkout, so the script needs to be copied over rather
+than run from a `git pull`'d checkout:
+
+```bash
+ssh -i ~/.ssh/id_ed25519_ansible ansible@Lab1.lan 'cat > /tmp/assertTailscale.sh' < assert/assertTailscale.sh
+ssh -i ~/.ssh/id_ed25519_ansible ansible@Lab1.lan 'bash /tmp/assertTailscale.sh --Debug'
+```
+
+On all three:
+
+```bash
+for h in Lab1.lan Lab2.lan Lab3.lan; do
+  ssh -i ~/.ssh/id_ed25519_ansible "ansible@${h}" 'cat > /tmp/assertTailscale.sh' < assert/assertTailscale.sh
+  ssh -i ~/.ssh/id_ed25519_ansible "ansible@${h}" 'bash /tmp/assertTailscale.sh --Debug'
+done
+```
+
+Because the script runs as `ansible` on these nodes, its secrets file is
+`/home/ansible/.config/tailscale/env`, not `gxbrooks`'s — stage the key there accordingly
+(`ssh ansible@Lab1.lan 'mkdir -p -m 700 ~/.config/tailscale'`, then write `env` the same way).
+
+`--Check` dry-runs without installing or joining; `--tags` overrides the advertised tag
+(default `tag:homelab`). On success the script prints the node's Tailscale IPv4 address;
+once every node has joined, `ssh gxbrooks@<tailscale-hostname>` works from anywhere, no
+port forwarding or dynamic DNS required.
+
+**Gotcha — a key that hits a tag-ACL rejection can come back unusable.** If `tag:homelab`
+isn't yet in the tailnet's `tagOwners` (Access Controls in the admin console) when `tailscale up
+--advertise-tags=tag:homelab` runs, it fails with `requested tags [...] are invalid or not
+permitted` and the node stays `NeedsLogin` — expected, just fix the ACL and retry. But even a
+key marked **Reusable** can come back `invalid key` for *other, not-yet-authenticated* nodes
+after one node successfully authenticates against it (reconfirmed empirically: one node joining
+fine did not stop a second node from getting `backend error: invalid key` on the same key — generate
+a fresh key if this happens rather than assuming the first one is still good). A key is *not*
+needed again for a node that's already joined — re-running the script against an already-connected
+node skips the `tailscale up` step entirely.
 
 ### OneDrive (Optimiz and later accounts)
 

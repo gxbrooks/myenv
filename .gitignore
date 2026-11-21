@@ -10,5 +10,6 @@ tmp/
 .env.*
 !**/.env.example
 **/csdm-injector/env
+**/tailscale/env
 
 
